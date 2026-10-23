@@ -79,19 +79,11 @@ export const Header: React.FC<HeaderProps> = ({ systemStatus = 'warning' }) => {
         <div className="header-clock" aria-label="System Time">
           <span style={{ color: 'var(--text-muted)' }} aria-hidden="true">⏱</span>
           <span>{currentTime || '00:00:00'}</span>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '2px' }}>LOCAL</span>
+          <span className="header-clock-tz">LOCAL</span>
         </div>
 
         <div
-          style={{
-            fontSize: 'var(--text-xs)',
-            fontFamily: 'var(--font-mono)',
-            padding: '2px 8px',
-            backgroundColor: 'var(--surface-secondary)',
-            borderRadius: 'var(--radius-control)',
-            border: '1px solid var(--border-default)',
-            color: 'var(--text-secondary)'
-          }}
+          className="operator-chip"
           title="Active Operator Session"
         >
           OPR: #01

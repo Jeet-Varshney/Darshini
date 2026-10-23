@@ -201,7 +201,7 @@ export const CommandMap: React.FC<CommandMapProps> = ({
       {/* Top Map Toolbar */}
       <div className="map-toolbar">
         <div className="map-toolbar-left">
-          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)' }}>
+          <span className="map-toolbar-label">
             MAP VIEWPORT:
           </span>
           <div className="map-view-toggle" role="group" aria-label="Map Display Mode">
@@ -224,7 +224,7 @@ export const CommandMap: React.FC<CommandMapProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <div className="map-toolbar-right">
           {tileErrorDetected && viewMode === 'tiles' && (
             <span
               style={{

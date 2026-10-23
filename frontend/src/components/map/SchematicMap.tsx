@@ -47,10 +47,10 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
   return (
     <div className="schematic-wrapper">
       <div className="schematic-notice-banner">
-        <span>
+        <span className="schematic-notice-text">
           <strong>{isFallbackActive ? '⚠️ TILE NETWORK UNAVAILABLE —' : 'ℹ️'} LOCAL SCHEMATIC MAP:</strong> Rendering deterministic vector blueprint of {venue.name}.
         </span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+        <span className="schematic-resilient-badge">
           OFFLINE RESILIENT MODE
         </span>
       </div>

@@ -96,31 +96,20 @@ export function App() {
             <span style={{ color: 'var(--text-muted)' }}>VENUE:</span>
             <span className="context-label">{FICTIONAL_VENUE.name}</span>
           </span>
-          <span style={{ color: 'var(--border-default)' }}>|</span>
+          <span className="context-divider">|</span>
           <span className="context-chip">
             <span style={{ color: 'var(--text-muted)' }}>SECTOR:</span>
             <span style={{ fontWeight: 600 }}>Simulated North & East Precinct</span>
           </span>
-          <span style={{ color: 'var(--border-default)' }}>|</span>
+          <span className="context-divider">|</span>
           <span className="context-chip">
             <span style={{ color: 'var(--text-muted)' }}>MONITORED ZONES:</span>
             <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>5 Zones (4 Gates)</span>
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-badge)',
-              backgroundColor: 'var(--status-critical-bg)',
-              color: 'var(--status-critical)',
-              border: '1px solid var(--status-critical-border)',
-              fontWeight: 700
-            }}
-          >
+        <div className="context-alert-group">
+          <span className="context-surge-badge">
             ACTIVE SURGE: GATE A PLAZA (3,120 pax)
           </span>
         </div>

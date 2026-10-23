@@ -10,7 +10,7 @@ export const CameraDetectionPlaceholder: React.FC = () => {
             <circle cx="12" cy="13" r="4" />
           </svg>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <div className="placeholder-title-group">
               <h2 className="placeholder-title">Camera & Detection</h2>
               <span className="placeholder-scope-badge">MILESTONE 2 SCOPE</span>
             </div>

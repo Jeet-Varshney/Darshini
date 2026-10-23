@@ -13,7 +13,7 @@ export const IncidentsReportsPlaceholder: React.FC = () => {
             <polyline points="10 9 9 9 8 9" />
           </svg>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <div className="placeholder-title-group">
               <h2 className="placeholder-title">Incidents & Reports</h2>
               <span className="placeholder-scope-badge">MILESTONE 5 SCOPE</span>
             </div>

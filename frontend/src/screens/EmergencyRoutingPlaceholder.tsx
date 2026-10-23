@@ -9,7 +9,7 @@ export const EmergencyRoutingPlaceholder: React.FC = () => {
             <polygon points="3 11 22 2 13 21 11 13 3 11" />
           </svg>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <div className="placeholder-title-group">
               <h2 className="placeholder-title">Emergency Routing</h2>
               <span className="placeholder-scope-badge">MILESTONE 4 SCOPE</span>
             </div>

@@ -11,7 +11,7 @@ export const ScenarioLabPlaceholder: React.FC = () => {
             <polyline points="2 12 12 17 22 12" />
           </svg>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <div className="placeholder-title-group">
               <h2 className="placeholder-title">Digital Twin / Scenario Lab</h2>
               <span className="placeholder-scope-badge">MILESTONE 3 SCOPE</span>
             </div>
