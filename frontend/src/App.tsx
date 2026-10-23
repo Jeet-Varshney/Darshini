@@ -5,7 +5,7 @@ import { FICTIONAL_VENUE } from './data/fictionalVenue';
 import { Header } from './components/layout/Header';
 import { Navigation } from './components/layout/Navigation';
 import { LiveOperations } from './screens/LiveOperations';
-import { CameraDetectionPlaceholder } from './screens/CameraDetectionPlaceholder';
+import { CameraDetectionScreen } from './screens/CameraDetectionScreen';
 import { ScenarioLabPlaceholder } from './screens/ScenarioLabPlaceholder';
 import { EmergencyRoutingPlaceholder } from './screens/EmergencyRoutingPlaceholder';
 import { IncidentsReportsPlaceholder } from './screens/IncidentsReportsPlaceholder';
@@ -126,7 +126,7 @@ export function App() {
           />
         )}
 
-        {activeSection === 'camera-detection' && <CameraDetectionPlaceholder />}
+        {activeSection === 'camera-detection' && <CameraDetectionScreen />}
         {activeSection === 'scenario-lab' && <ScenarioLabPlaceholder />}
         {activeSection === 'emergency-routing' && <EmergencyRoutingPlaceholder />}
         {activeSection === 'incidents-reports' && <IncidentsReportsPlaceholder />}

@@ -82,20 +82,81 @@ npm run build
 npm run preview
 ```
 
+## Milestone 2 Implementation Scope: Real Person Detection Pipeline
+
+Milestone 2 integrates a genuinely working computer-vision backend with the existing command center UI:
+
+1. **FastAPI Computer Vision Backend (`backend/`):**
+   - **Pretrained YOLOv8n Object Detection:** Runs lightweight YOLOv8n on CPU with zero GPU requirement.
+   - **Person Class Filtering:** Strictly isolates detections to COCO Class 0 (`person`), capturing normalized and pixel coordinates, confidence scores, and frame counts.
+   - **Video Frame Decoding & Sampling:** Uses OpenCV (`cv2.VideoCapture`) to sample frames at controlled intervals (default: 1.0 FPS, capped at 60 frames) to keep CPU inference under ~3-5 seconds.
+   - **Annotated Keyframe Preview:** Automatically generates an authentic JPEG preview frame annotated with steel-blue bounding boxes, confidence tags, and top telemetry HUD, encoded as a base64 data URI.
+   - **Temporary File Safeguards:** Uploaded video chunks are written to UUID-isolated temporary files in `backend/temp_uploads/` and guaranteed to be deleted in `finally` blocks upon completion or failure.
+   - **Separation of Concerns:** Model loading (`model_service.py`) is decoupled from video processing (`video_service.py`) and API routing (`routes.py`).
+
+2. **Frontend Camera & Detection Screen (`CameraDetectionScreen.tsx`):**
+   - **Live Health Status:** Automatically checks `/health` and displays the backend model readiness badge (`BACKEND ONLINE: YOLOv8n (CPU)`).
+   - **Pre-Packaged 1-Click Samples:** Includes `gate1_sample.mp4` (active pedestrians) and `empty_zone_sample.mp4` (zero detections) for instant evaluation.
+   - **Custom Video Upload:** Supports drag-and-drop file upload for `.mp4`, `.mov`, `.avi`, `.mkv` with 50 MB safeguard.
+   - **Authentic Results & Audit Log:** Displays peak person count, total person instances, inference time, annotated preview frame, and an expandable frame-by-frame audit log with bounding box coordinate inspection.
+   - **Transparent Zero Handling:** When zero persons are detected, the system honestly reports zero detections and explains that no synthetic data was fabricated.
+
+---
+
+## Quick Start & Setup
+
+### Prerequisites
+- **Node.js:** `v18.0.0` or higher (`v24.18.0` verified)
+- **npm:** `v9.0.0` or higher (`v11.16.0` verified)
+- **Python:** `3.10` to `3.13` (Python `3.13.12` verified)
+
+### 1. Frontend Setup
+```bash
+# Navigate to the frontend directory
+cd frontend
+npm install
+npm run dev
+```
+Open `http://localhost:5173` in any browser.
+
+### 2. Backend Setup
+```bash
+# Create virtual environment and install backend dependencies
+cd backend
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -r requirements.txt
+
+# Start FastAPI backend server on port 8000
+PYTHONPATH=. .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+Alternatively, from the project root:
+```bash
+npm run backend       # Starts backend uvicorn server
+npm run backend:test  # Runs pytest test suite
+```
+
+### 3. Backend Test Suite
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python -m pytest -v tests/
+```
+All 10 unit and integration tests verify health reporting, unsupported file handling, empty file rejection, model-unavailable behavior, real YOLO detection, zero-detection honesty, and temporary file cleanup.
+
 ---
 
 ## Data Integrity & Ethical Safeguards
 
-1. **Simulated Venue Configuration:** All venue zones, crowd counts, and road conditions represent deterministic demonstration fixtures. They are explicitly labelled as `[SIMULATED FIXTURE]` across the UI.
-2. **No Fabricated Model Inference:** Computer vision inference is **NOT** claimed or simulated in this milestone. Camera & Detection clearly communicates that models will be integrated in Milestone 2.
-3. **Map Tiles Disclaimer:** Street map tiles provide geographical and spatial context; they do not represent real-time municipal traffic telemetry.
+1. **Simulated Venue Configuration:** All venue zones, crowd counts, and road conditions represent deterministic demonstration fixtures explicitly labelled as `[SIMULATED FIXTURE]` across the UI.
+2. **Authentic Model Inference:** Camera & Detection runs genuine inference using pretrained YOLOv8n on uploaded video frames. Bounding boxes and confidence scores reflect actual model outputs without synthetic injection.
+3. **Transparent Prototype Boundary:** The application clearly states: `PROTOTYPE VIDEO ANALYSIS — NOT LIVE CCTV SURVEILLANCE`. It does not claim live municipal CCTV integration, real-time crowd-density estimation from person count alone, or vehicle tracking.
 4. **Human-in-the-Loop:** All automated indicators and advisories are presented as decision-support heuristics requiring human confirmation.
 
 ---
 
 ## Upcoming Implementation Milestones
 
-- **Milestone 2:** Computer Vision & Video Detection Canvas (Synchronized bounding-box overlays, tripwire counting).
+- **Milestone 1:** App Shell, Design System & Interactive Map (Completed).
+- **Milestone 2:** Real Person Detection Pipeline & Video Inspector (Completed).
 - **Milestone 3:** Digital Twin / Scenario Lab (NetworkX capacitated bottleneck simulation, what-if parameter sliders).
 - **Milestone 4:** Emergency Route Solver (Impedance-weighted Dijkstra path planning, interactive road edge blocking).
 - **Milestone 5:** Incidents & Reports (Incident registry, evidence drawer, PDF summary exporter).

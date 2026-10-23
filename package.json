@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
-    "preview": "npm --prefix frontend run preview"
+    "preview": "npm --prefix frontend run preview",
+    "backend": "cd backend && PYTHONPATH=. .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+    "backend:test": "cd backend && PYTHONPATH=. .venv/bin/python -m pytest -v tests/"
   }
 }
