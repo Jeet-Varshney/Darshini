@@ -1,0 +1,98 @@
+/* ============================================================================
+   CrowdFlow Sentinel — Command Center Design Tokens
+   Visual Direction: Command Center | Theme: Light | Accent: Steel Blue (#365F8D)
+   ============================================================================ */
+
+:root {
+  /* Surface & Canvas Colors */
+  --bg-app: #F5F7FA;
+  --surface-primary: #FFFFFF;
+  --surface-secondary: #EEF2F6;
+  --surface-tertiary: #E3E9F0;
+  --surface-subtle: #F8FAFC;
+
+  /* Text & Content Hierarchy */
+  --text-primary: #172B43;
+  --text-secondary: #526174;
+  --text-muted: #7A8B9E;
+  --text-inverse: #FFFFFF;
+
+  /* Structural Borders & Dividers */
+  --border-default: #D9E1EA;
+  --border-subtle: #E6ECF2;
+  --border-strong: #B0C0D2;
+
+  /* Primary Accent System */
+  --accent-primary: #365F8D;
+  --accent-hover: #294B73;
+  --accent-subtle: #EBF1F7;
+  --accent-contrast: #FFFFFF;
+
+  /* Semantic Status Palette (WCAG 2.1 AA Compliant on White/Secondary) */
+  --status-critical: #B42318;
+  --status-critical-bg: #FEE4E2;
+  --status-critical-border: #FECDCA;
+
+  --status-warning: #A15C00;
+  --status-warning-bg: #FEF0C7;
+  --status-warning-border: #FEDF89;
+
+  --status-info: #245D9C;
+  --status-info-bg: #E0F2FE;
+  --status-info-border: #B9E6FE;
+
+  --status-positive: #237A57;
+  --status-positive-bg: #D1FADF;
+  --status-positive-border: #A6F4C5;
+
+  /* Spacing Scale (4px base unit) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Corner Radii */
+  --radius-badge: 4px;
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-pill: 9999px;
+
+  /* Standard Control Heights */
+  --control-height: 40px;
+  --control-height-compact: 32px;
+  --header-height: 54px;
+  --nav-height: 44px;
+
+  /* Typography Stacks */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", "Roboto Mono", SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+
+  /* Typography Scales */
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+
+  /* Box Shadows (Subtle, Operational, Non-Glowing) */
+  --shadow-sm: 0 1px 2px rgba(23, 43, 67, 0.05);
+  --shadow-md: 0 2px 6px rgba(23, 43, 67, 0.08);
+  --shadow-lg: 0 6px 16px rgba(23, 43, 67, 0.10);
+
+  /* Accessible Focus Ring */
+  --focus-ring: 0 0 0 2px #FFFFFF, 0 0 0 4px var(--accent-primary);
+  --focus-outline: 2px solid var(--accent-primary);
+  --focus-offset: 2px;
+
+  /* Z-Index Hierarchy */
+  --z-base: 1;
+  --z-overlay: 10;
+  --z-dropdown: 100;
+  --z-modal: 1000;
+}
