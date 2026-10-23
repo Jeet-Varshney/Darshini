@@ -1,22 +1,30 @@
 import React from 'react';
 import type { VenueConfiguration, VenueZone } from '../../types/venue';
+import type { ZoneLiveStatus } from '../../types/detection';
 
 interface SchematicMapProps {
   venue: VenueConfiguration;
   selectedZoneId: string | null;
   onSelectZone: (zone: VenueZone) => void;
   isFallbackActive?: boolean;
+  liveZoneStatuses?: Record<string, ZoneLiveStatus>;
+  onNavigateToCamera?: (zoneId: string) => void;
 }
 
 export const SchematicMap: React.FC<SchematicMapProps> = ({
   venue,
   selectedZoneId,
   onSelectZone,
-  isFallbackActive = false
+  isFallbackActive = false,
+  liveZoneStatuses,
+  onNavigateToCamera,
 }) => {
-  const getZoneFill = (zone: VenueZone, isSelected: boolean) => {
+  const getZoneFill = (zone: VenueZone, isSelected: boolean, isLive: boolean) => {
     if (isSelected) {
       return '#E0EDFA'; // Light steel blue highlight
+    }
+    if (isLive) {
+      return '#D1FAE5'; // Soft emerald green for live active camera
     }
     switch (zone.status) {
       case 'CRITICAL':
@@ -29,9 +37,12 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
     }
   };
 
-  const getZoneStroke = (zone: VenueZone, isSelected: boolean) => {
+  const getZoneStroke = (zone: VenueZone, isSelected: boolean, isLive: boolean) => {
     if (isSelected) {
       return '#365F8D';
+    }
+    if (isLive) {
+      return '#059669'; // Emerald border
     }
     switch (zone.status) {
       case 'CRITICAL':
@@ -59,7 +70,7 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
         <svg
           viewBox="0 0 900 520"
           className="schematic-svg"
-          aria-label="Schematic Vector Map of Sentinel Precinct"
+          aria-label="Schematic Vector Map of Darshini Precinct"
         >
           {/* Subtle Grid Background */}
           <defs>
@@ -100,8 +111,10 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
           <g className="zones-layer" aria-label="Venue Zones">
             {venue.zones.map((zone) => {
               const isSelected = selectedZoneId === zone.id;
-              const fill = getZoneFill(zone, isSelected);
-              const stroke = getZoneStroke(zone, isSelected);
+              const liveStatus = liveZoneStatuses?.[zone.id];
+              const isLive = liveStatus?.camera_assigned && liveStatus.status === 'STREAMING';
+              const fill = getZoneFill(zone, isSelected, isLive);
+              const stroke = getZoneStroke(zone, isSelected, isLive);
 
               return (
                 <g
@@ -149,6 +162,29 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
                     {zone.code}
                   </text>
 
+                  {/* Live Camera Badge if streaming */}
+                  {isLive && (
+                    <>
+                      <rect
+                        x={zone.svgRect.x + zone.svgRect.width - 98}
+                        y={zone.svgRect.y + 8}
+                        width="90"
+                        height="18"
+                        rx="4"
+                        fill="#065F46"
+                      />
+                      <text
+                        x={zone.svgRect.x + zone.svgRect.width - 53}
+                        y={zone.svgRect.y + 20}
+                        textAnchor="middle"
+                        fill="#FFFFFF"
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700 }}
+                      >
+                        📷 {liveStatus.instantaneous_count} LIVE PAX
+                      </text>
+                    </>
+                  )}
+
                   {/* Zone Name */}
                   <text
                     x={zone.svgRect.labelX}
@@ -159,7 +195,7 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
                     {zone.name}
                   </text>
 
-                  {/* Simulated Density & LoS readout */}
+                  {/* Density & LoS readout */}
                   <text
                     x={zone.svgRect.labelX}
                     y={zone.svgRect.labelY + 12}
@@ -167,7 +203,9 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
                     className="svg-density-label"
                     fill={stroke}
                   >
-                    {zone.densityPerSqm} p/m² • LoS {zone.fruinLoS} ({zone.simulatedCount} pax)
+                    {isLive
+                      ? `LIVE: ${liveStatus.instantaneous_count} pax • ${(liveStatus.density_per_sqm || 0).toFixed(3)} p/m²`
+                      : `${zone.densityPerSqm} p/m² • LoS ${zone.fruinLoS} (${zone.simulatedCount} pax)`}
                   </text>
 
                   {/* Operational Status Tag */}
@@ -182,7 +220,7 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
                       fill: stroke
                     }}
                   >
-                    [{zone.status}]
+                    {isLive ? `[LIVE CAMERA INFERENCE]` : `[${zone.status} • SIMULATED]`}
                   </text>
                 </g>
               );
@@ -216,6 +254,58 @@ export const SchematicMap: React.FC<SchematicMapProps> = ({
                 </text>
               </g>
             ))}
+          </g>
+
+          {/* Configured Camera Stations Layer */}
+          <g className="cameras-layer" aria-label="Camera Stations">
+            {(venue.cameras || []).map((station) => {
+              const liveStatus = liveZoneStatuses?.[station.assignedZoneId];
+              const isStreaming = liveStatus?.camera_assigned && liveStatus.status === 'STREAMING';
+              const isStale = liveStatus?.status === 'STALE';
+              const bgColor = isStreaming ? '#065F46' : isStale ? '#B45309' : '#1E293B';
+              const dotColor = isStreaming ? '#34D399' : isStale ? '#FBBF24' : '#94A3B8';
+
+              return (
+                <g
+                  key={station.id}
+                  className="svg-camera-station"
+                  transform={`translate(${station.svgPoint.x - 36}, ${station.svgPoint.y - 12})`}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    if (onNavigateToCamera) {
+                      onNavigateToCamera(station.assignedZoneId);
+                    } else {
+                      const zone = venue.zones.find((z) => z.id === station.assignedZoneId);
+                      if (zone) onSelectZone(zone);
+                    }
+                  }}
+                >
+                  <rect
+                    width="72"
+                    height="22"
+                    rx="11"
+                    fill={bgColor}
+                    stroke="#FFFFFF"
+                    strokeWidth="1.5"
+                    filter="drop-shadow(0 2px 4px rgba(0,0,0,0.25))"
+                  />
+                  <circle cx="10" cy="11" r="3.5" fill={dotColor} />
+                  <text
+                    x="20"
+                    y="14"
+                    fill="#FFFFFF"
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '9px',
+                      fontWeight: 800,
+                      userSelect: 'none',
+                    }}
+                  >
+                    📹 {station.code}
+                  </text>
+                </g>
+              );
+            })}
           </g>
         </svg>
       </div>

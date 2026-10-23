@@ -51,6 +51,19 @@ export interface VenueRoad {
   };
 }
 
+export interface VenueCameraStation {
+  id: string;
+  code: string;
+  name: string;
+  assignedZoneId: string;
+  coordinates: [number, number];
+  svgPoint: {
+    x: number;
+    y: number;
+  };
+  isConfiguredVenuePoint: boolean;
+}
+
 export interface VenueConfiguration {
   id: string;
   name: string;
@@ -60,5 +73,6 @@ export interface VenueConfiguration {
   zones: VenueZone[];
   gates: VenueGate[];
   roads: VenueRoad[];
+  cameras: VenueCameraStation[];
   disclaimer: string;
 }

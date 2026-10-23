@@ -1,5 +1,5 @@
 """
-CrowdFlow Sentinel - Computer Vision Model Service
+Darshini - Computer Vision Model Service
 Manages pretrained YOLO model lifecycle, CPU inference, and person class filtering.
 """
 
@@ -8,9 +8,17 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
-from app.config import MODEL_PATH, MODEL_NAME, PERSON_CLASS_ID, DEFAULT_CONF_THRESHOLD
+import os
+import torch
+from app.config import (
+    MODEL_PATH,
+    MODEL_NAME,
+    PERSON_CLASS_ID,
+    DEFAULT_CONF_THRESHOLD,
+    DEFAULT_INFERENCE_IMGSZ,
+)
 
-logger = logging.getLogger("crowdflow.model_service")
+logger = logging.getLogger("darshini.model_service")
 
 
 class ModelUnavailableError(Exception):
@@ -46,6 +54,11 @@ class ModelService:
 
         try:
             from ultralytics import YOLO
+
+            # Configure optimal CPU thread pool (clamp to physical core budget)
+            cpu_threads = min(4, os.cpu_count() or 1)
+            torch.set_num_threads(cpu_threads)
+            logger.info("Configured PyTorch CPU thread pool to %d threads.", cpu_threads)
 
             logger.info("Loading pretrained YOLO model from %s on CPU...", self.weights_path)
             model = YOLO(str(self.weights_path))
@@ -90,18 +103,11 @@ class ModelService:
         self,
         image_bgr: np.ndarray,
         conf_threshold: float = DEFAULT_CONF_THRESHOLD,
+        imgsz: int = DEFAULT_INFERENCE_IMGSZ,
     ) -> List[Dict[str, Any]]:
         """
         Runs real model inference on a single BGR frame and returns detected persons.
-        Returns:
-            List of dicts: {
-                "box_pixels": [xmin, ymin, xmax, ymax],
-                "box_normalized": [ymin, xmin, ymax, xmax],
-                "confidence": float,
-                "class_id": 0,
-                "class_name": "person"
-            }
-        Never returns synthetic detections. Returns empty list if no persons detected.
+        Uses torch.inference_mode() and configurable imgsz for rapid CPU evaluation.
         """
         if not self.is_ready:
             raise ModelUnavailableError(
@@ -112,14 +118,16 @@ class ModelService:
         if h <= 0 or w <= 0:
             return []
 
-        # Run model inference on CPU with verbose=False
-        results = self._model(
-            image_bgr,
-            device=self.device,
-            conf=conf_threshold,
-            classes=[self.person_class_id],
-            verbose=False,
-        )
+        # Run model inference on CPU within torch.inference_mode()
+        with torch.inference_mode():
+            results = self._model(
+                image_bgr,
+                device=self.device,
+                conf=conf_threshold,
+                classes=[self.person_class_id],
+                imgsz=imgsz,
+                verbose=False,
+            )
 
         detections: List[Dict[str, Any]] = []
         if not results:

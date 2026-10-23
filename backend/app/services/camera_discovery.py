@@ -1,5 +1,5 @@
 """
-CrowdFlow Sentinel - Universal Camera Discovery Service
+Darshini - Universal Camera Discovery Service
 Discovers, inspects, and validates any readable video device exposed by the OS
 (built-in laptop webcams, external USB webcams, Iriun virtual devices, DroidCam, etc.).
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import cv2
 
-logger = logging.getLogger("crowdflow.camera_discovery")
+logger = logging.getLogger("darshini.camera_discovery")
 
 
 class CameraDiscoveryService:

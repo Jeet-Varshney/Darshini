@@ -1,5 +1,5 @@
 /* ============================================================================
-   CrowdFlow Sentinel — Map & Schematic Stylesheet
+   Darshini — Map & Schematic Stylesheet
    ============================================================================ */
 
 /* Map Wrapper */
@@ -423,3 +423,448 @@
   line-height: 1.4;
   word-break: break-word;
 }
+
+/* Milestone 3: Live Camera Observation Card & Badges */
+.live-observation-card {
+  background-color: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.live-observation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.live-observation-title {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: #0369A1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.live-cam-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: #DCFCE7;
+  color: #15803D;
+  border: 1px solid #86EFAC;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.stale-cam-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FCD34D;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.live-observation-metric {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.live-obs-val {
+  font-size: var(--text-xl);
+  font-weight: 800;
+  color: #0369A1;
+  font-family: var(--font-mono);
+}
+
+.live-obs-sub {
+  font-size: 11px;
+  color: #0284C7;
+  font-weight: 500;
+}
+
+.live-observation-specs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background-color: rgba(255, 255, 255, 0.7);
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid #E0F2FE;
+}
+
+.live-obs-provenance {
+  font-size: 10px;
+  color: #0369A1;
+  line-height: 1.35;
+  font-style: italic;
+}
+
+.btn-assign-camera {
+  background-color: var(--surface-primary);
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-assign-camera:hover {
+  background-color: var(--accent-primary);
+  color: #FFFFFF;
+}
+
+/* ==========================================================================
+   Milestone 4: Map Camera Stations & Browser Geolocation ("My Location")
+   ========================================================================== */
+
+/* User GPS Marker & Pulsing Ring */
+.custom-user-gps-pin {
+  background: transparent;
+  border: none;
+}
+
+.user-gps-marker {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-gps-pulse {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(14, 165, 233, 0.4);
+  animation: gps-pulse 2s infinite ease-out;
+}
+
+.user-gps-dot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: #0284C7;
+  border: 2.5px solid #FFFFFF;
+  box-shadow: 0 0 6px rgba(2, 132, 199, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes gps-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+/* Camera Station Pin on Leaflet Map */
+.custom-camera-station-pin {
+  background: transparent;
+  border: none;
+}
+
+.camera-pin-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 12px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  border: 1.5px solid #FFFFFF;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
+}
+
+.camera-pin-container:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.camera-pin-streaming {
+  background-color: #065F46;
+  color: #FFFFFF;
+}
+
+.camera-pin-stale {
+  background-color: #B45309;
+  color: #FFFFFF;
+}
+
+.camera-pin-disconnected {
+  background-color: #1E293B;
+  color: #E2E8F0;
+}
+
+.camera-pin-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.camera-pin-streaming .camera-pin-dot {
+  background-color: #34D399;
+  box-shadow: 0 0 4px #34D399;
+}
+
+.camera-pin-stale .camera-pin-dot {
+  background-color: #FBBF24;
+}
+
+.camera-pin-disconnected .camera-pin-dot {
+  background-color: #94A3B8;
+}
+
+/* Camera Details Popup Card */
+.camera-map-popup-card {
+  padding: 4px;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  min-width: 220px;
+}
+
+.cam-popup-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-default);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.cam-popup-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 5px;
+  background-color: var(--surface-secondary);
+  border-radius: 4px;
+  border: 1px solid var(--border-default);
+}
+
+.cam-popup-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cam-popup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  margin-bottom: 10px;
+}
+
+.cam-popup-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.cam-popup-label {
+  color: var(--text-muted);
+}
+
+.cam-popup-val {
+  font-weight: 600;
+  text-align: right;
+}
+
+.cam-popup-action-btn {
+  width: 100%;
+  padding: 6px 10px;
+  background-color: var(--accent-primary);
+  color: #FFFFFF;
+  border: none;
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.cam-popup-action-btn:hover {
+  background-color: var(--accent-primary-hover, #23476E);
+}
+
+/* Map Geolocation Bar & Status */
+.map-location-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: linear-gradient(90deg, #F0FDF4 0%, #E0F2FE 100%);
+  border-bottom: 1px solid #BAE6FD;
+  font-size: 11px;
+  color: #0369A1;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.map-location-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background-color: var(--status-warning-bg);
+  border-bottom: 1px solid var(--status-warning-border);
+  font-size: 11px;
+  color: var(--status-warning);
+  gap: 8px;
+}
+
+.btn-location-action {
+  background-color: #FFFFFF;
+  border: 1px solid #38BDF8;
+  color: #0284C7;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-location-action:hover {
+  background-color: #0284C7;
+  color: #FFFFFF;
+}
+
+.btn-location-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-default);
+  background-color: var(--surface-primary);
+  color: var(--text-primary);
+  transition: all 0.15s ease;
+}
+
+.btn-location-toggle:hover {
+  border-color: var(--accent-primary);
+  background-color: var(--surface-secondary);
+}
+
+.btn-location-toggle.active {
+  background-color: #E0F2FE;
+  border-color: #0284C7;
+  color: #0369A1;
+  font-weight: 700;
+}
+
+.btn-location-toggle.loading {
+  opacity: 0.85;
+  cursor: wait;
+}
+
+@keyframes spin-geo {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-icon {
+  display: inline-block;
+  animation: spin-geo 1.2s linear infinite;
+}
+
+/* Low Location Accuracy Warning Banner */
+.map-location-accuracy-warning-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: var(--status-warning-bg, #FEF0C7);
+  border-bottom: 1px solid var(--status-warning-border, #FEDF89);
+  font-size: 11px;
+  color: var(--text-primary);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Manual Pin Placement Mode Prompt */
+.map-location-select-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: #E0F2FE;
+  border-bottom: 1px solid #BAE6FD;
+  font-size: 11px;
+  color: #0369A1;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-location-action-primary {
+  background-color: #0284C7 !important;
+  color: #FFFFFF !important;
+  border-color: #0284C7 !important;
+}
+
+.btn-location-action-primary:hover {
+  background-color: #0369A1 !important;
+}
+
+/* Crosshair cursor when manual location selection mode is active */
+.manual-pin-cursor,
+.manual-pin-cursor .leaflet-container,
+.manual-pin-cursor .leaflet-grab,
+.manual-pin-cursor .leaflet-interactive {
+  cursor: crosshair !important;
+}
+

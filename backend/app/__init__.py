@@ -1,1 +1,1 @@
-"""CrowdFlow Sentinel Backend Package"""
+"""Darshini Backend Package"""

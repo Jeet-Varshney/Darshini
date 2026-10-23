@@ -59,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({ systemStatus = 'warning' }) => {
             <path d="M3 12h18" />
             <circle cx="12" cy="12" r="3" fill="currentColor" fillOpacity="0.2" />
           </svg>
-          <span className="brand-title">CrowdFlow Sentinel</span>
+          <span className="brand-title">Darshini</span>
         </div>
 
         {/* Persistent mode indicator identifying the experience as prototype/demo */}

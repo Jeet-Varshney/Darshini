@@ -1,5 +1,5 @@
 """
-CrowdFlow Sentinel - Main FastAPI Application
+Darshini - Main FastAPI Application
 Entry point for the backend server with CORS, model initialization, and routing.
 """
 
@@ -16,20 +16,20 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("crowdflow.main")
+logger = logging.getLogger("darshini.main")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initializes the computer-vision model on application startup."""
-    logger.info("Initializing CrowdFlow Sentinel Backend API...")
+    logger.info("Initializing Darshini Backend API...")
     success = model_service.initialize()
     if success:
         logger.info("Pretrained detection model is ready for inference.")
     else:
         logger.warning("Model initialization deferred or weights unavailable: %s", model_service.error_message)
     yield
-    logger.info("Shutting down CrowdFlow Sentinel Backend API and releasing camera devices...")
+    logger.info("Shutting down Darshini Backend API and releasing camera devices...")
     try:
         from app.services.camera_stream import live_camera_manager
         live_camera_manager.stop()
@@ -38,9 +38,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="CrowdFlow Sentinel API",
+    title="Darshini API",
     description="Operational Command Center API with real computer-vision person detection pipeline.",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -67,8 +67,8 @@ app.include_router(router)
 @app.get("/", summary="API Root", description="Provides basic service identification and docs link.")
 async def root():
     return {
-        "service": "CrowdFlow Sentinel Backend",
-        "version": "0.2.0",
+        "service": "Darshini Backend",
+        "version": "0.3.0",
         "docs": "/docs",
         "health": "/health",
         "model_ready": model_service.is_ready,

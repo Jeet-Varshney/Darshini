@@ -1,5 +1,5 @@
 """
-CrowdFlow Sentinel - Backend Configuration
+Darshini - Backend Configuration
 Configuration parameters for computer-vision inference and API services.
 """
 
@@ -29,6 +29,12 @@ DEFAULT_CONF_THRESHOLD = 0.25
 DEFAULT_SAMPLE_FPS = 1.0  # Sample 1 frame per second to keep CPU inference fast
 MAX_FRAMES_TO_PROCESS = 60  # Maximum frames sampled per video upload to protect CPU
 
+# Inference and streaming optimization
+DEFAULT_INFERENCE_IMGSZ = 416  # High-efficiency CPU inference resolution (25-40 FPS)
+LIVE_CAPTURE_TARGET_WIDTH = 640
+LIVE_CAPTURE_TARGET_HEIGHT = 480
+LIVE_STREAM_TARGET_FPS = 20  # Smooth UI preview rate
+
 # Preview generation
-PREVIEW_MAX_WIDTH = 960
-PREVIEW_JPEG_QUALITY = 85
+PREVIEW_MAX_WIDTH = 640  # Downscale preview to 640px wide (~4-6 KB per frame)
+PREVIEW_JPEG_QUALITY = 75  # Optimal visual fidelity with 4x smaller payload than 85

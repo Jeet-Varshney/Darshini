@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { SectionId } from './types/navigation';
 import type { VenueZone } from './types/venue';
+import type { ZoneLiveStatus } from './types/detection';
+import { fetchLiveZoneStatuses } from './services/detectionApi';
 import { FICTIONAL_VENUE } from './data/fictionalVenue';
 import { Header } from './components/layout/Header';
 import { Navigation } from './components/layout/Navigation';
@@ -15,6 +17,49 @@ export function App() {
   const [selectedZone, setSelectedZone] = useState<VenueZone | null>(
     FICTIONAL_VENUE.zones[0] // Start with North Gate Plaza focused for immediate situational context
   );
+
+  // Milestone 3: Live Zone Statuses from backend camera inference
+  const [liveZoneStatuses, setLiveZoneStatuses] = useState<Record<string, ZoneLiveStatus>>({});
+  const [targetCameraZoneId, setTargetCameraZoneId] = useState<string | null>(null);
+
+  // Poll backend zone live status every 2.5 seconds
+  useEffect(() => {
+    let isMounted = true;
+    const fetchStatuses = async () => {
+      try {
+        const res = await fetchLiveZoneStatuses();
+        if (isMounted && res.zones) {
+          const map: Record<string, ZoneLiveStatus> = {};
+          res.zones.forEach((z) => {
+            map[z.zone_id] = z;
+          });
+          setLiveZoneStatuses(map);
+        }
+      } catch (e) {
+        // Silently preserve state if offline
+      }
+    };
+
+    fetchStatuses();
+    const interval = setInterval(fetchStatuses, 2500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleNavigateToCamera = (zoneId: string) => {
+    setTargetCameraZoneId(zoneId);
+    setActiveSection('camera-detection');
+  };
+
+  const handleNavigateToZone = (zoneId: string) => {
+    const zone = FICTIONAL_VENUE.zones.find((z) => z.id === zoneId);
+    if (zone) {
+      setSelectedZone(zone);
+    }
+    setActiveSection('live-operations');
+  };
 
   // Keyboard shortcut handler for 1-5 navigation
   // Strictly checks that input/textarea/select are not focused and no modifier keys are pressed
@@ -123,10 +168,17 @@ export function App() {
             selectedZone={selectedZone}
             onSelectZone={handleSelectZone}
             onClearZone={handleClearZone}
+            liveZoneStatuses={liveZoneStatuses}
+            onNavigateToCamera={handleNavigateToCamera}
           />
         )}
 
-        {activeSection === 'camera-detection' && <CameraDetectionScreen />}
+        {activeSection === 'camera-detection' && (
+          <CameraDetectionScreen
+            initialZoneId={targetCameraZoneId}
+            onNavigateToZone={handleNavigateToZone}
+          />
+        )}
         {activeSection === 'scenario-lab' && <ScenarioLabPlaceholder />}
         {activeSection === 'emergency-routing' && <EmergencyRoutingPlaceholder />}
         {activeSection === 'incidents-reports' && <IncidentsReportsPlaceholder />}
@@ -139,7 +191,7 @@ export function App() {
             DATA: FICTIONAL CONFIGURATION (SIMULATED FIXTURE)
           </span>
           <span>
-            CrowdFlow Sentinel v0.1.0 • Milestone 1 Foundation
+            Darshini v0.4.0 • Live Operations, Geolocation & Universal CV Platform
           </span>
         </div>
         <div style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>

@@ -4,15 +4,32 @@ import type {
   CameraListResponse,
   CameraStatusResponse,
   LiveStreamPacket,
+  ZoneStatusListResponse,
 } from '../types/detection';
 
-const defaultHost = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
-const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${defaultHost}:8000`;
-const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
+const isBrowser = typeof window !== 'undefined';
+const isHttps = isBrowser && window.location.protocol === 'https:';
+const defaultHost = isBrowser && window.location.hostname ? window.location.hostname : 'localhost';
+
+export const API_BASE_URL: string =
+  import.meta.env.VITE_API_URL ||
+  (isBrowser && window.location.port === '5173'
+    ? `http://${defaultHost}:8000`
+    : isBrowser && window.location.origin
+    ? window.location.origin
+    : `http://${defaultHost}:8000`);
+
+export const WS_BASE_URL: string =
+  import.meta.env.VITE_WS_URL ||
+  (API_BASE_URL.startsWith('https://')
+    ? API_BASE_URL.replace(/^https:\/\//, 'wss://')
+    : API_BASE_URL.startsWith('http://')
+    ? API_BASE_URL.replace(/^http:\/\//, 'ws://')
+    : `${isHttps ? 'wss:' : 'ws:'}//${defaultHost}:8000`);
 
 export async function checkBackendHealth(): Promise<BackendHealthStatus> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
 
   try {
     const res = await fetch(`${API_BASE_URL}/health`, {
@@ -29,7 +46,7 @@ export async function checkBackendHealth(): Promise<BackendHealthStatus> {
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new Error('Connection timed out contacting backend at localhost:8000');
+      throw new Error(`Connection timed out contacting backend at ${API_BASE_URL}`);
     }
     throw new Error(err.message || 'Cannot reach FastAPI backend server');
   }
@@ -53,7 +70,8 @@ export async function fetchCameraStatus(): Promise<CameraStatusResponse> {
 
 export async function startLiveCamera(
   deviceIndex: number,
-  confThreshold: number = 0.25
+  confThreshold: number = 0.25,
+  assignedZoneId?: string | null
 ): Promise<CameraStatusResponse> {
   const res = await fetch(`${API_BASE_URL}/api/camera/start`, {
     method: 'POST',
@@ -61,6 +79,7 @@ export async function startLiveCamera(
     body: JSON.stringify({
       device_index: deviceIndex,
       conf_threshold: confThreshold,
+      assigned_zone_id: assignedZoneId || null,
     }),
   });
 
@@ -69,6 +88,34 @@ export async function startLiveCamera(
     throw new Error(data?.detail || `Failed to start camera on device index ${deviceIndex}`);
   }
   return data;
+}
+
+export async function assignCameraZone(
+  deviceIndex: number,
+  zoneId: string | null
+): Promise<CameraStatusResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/camera/assign-zone`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      device_index: deviceIndex,
+      zone_id: zoneId || null,
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.detail || `Failed to assign zone '${zoneId}'`);
+  }
+  return data;
+}
+
+export async function fetchLiveZoneStatuses(): Promise<ZoneStatusListResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/zones/live-status`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch live zone statuses (HTTP ${res.status})`);
+  }
+  return res.json();
 }
 
 export async function stopLiveCamera(): Promise<CameraStatusResponse> {
@@ -106,6 +153,32 @@ export function createCameraWebSocket(
   }
 
   return ws;
+}
+
+export async function inferClientFrame(
+  frameBase64: string,
+  zoneId?: string | null,
+  cameraName?: string,
+  confThreshold: number = 0.25,
+  clientId?: string
+): Promise<LiveStreamPacket> {
+  const res = await fetch(`${API_BASE_URL}/api/camera/infer-frame`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      image: frameBase64,
+      zone_id: zoneId || null,
+      camera_name: cameraName || 'Browser Camera',
+      conf_threshold: confThreshold,
+      client_id: clientId || 'browser-client',
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.detail || `Inference failed with HTTP ${res.status}`);
+  }
+  return data as LiveStreamPacket;
 }
 
 export async function runVideoDetection(

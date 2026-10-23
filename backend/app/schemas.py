@@ -1,5 +1,5 @@
 """
-CrowdFlow Sentinel - API Data Schemas
+Darshini - API Data Schemas
 Pydantic schemas for health, model status, and video person detection.
 """
 
@@ -98,16 +98,79 @@ class CameraListResponse(BaseModel):
 class CameraStartRequest(BaseModel):
     device_index: int = Field(0, description="V4L2 index of camera device to activate")
     conf_threshold: float = Field(0.25, ge=0.05, le=0.95, description="Model confidence threshold for person class")
+    assigned_zone_id: Optional[str] = Field(None, description="Venue zone ID mapped to this camera")
+
+
+class CameraZoneAssignRequest(BaseModel):
+    device_index: int = Field(0, description="V4L2 camera index")
+    zone_id: Optional[str] = Field(None, description="Target venue zone ID, or None to unassign")
 
 
 class CameraStatusResponse(BaseModel):
     is_streaming: bool = Field(..., description="Whether live camera capture and inference is active")
     active_device_index: Optional[int] = Field(None, description="Active camera index")
     active_camera_name: Optional[str] = Field(None, description="Active camera name")
+    assigned_zone_id: Optional[str] = Field(None, description="Assigned venue zone ID")
+    assigned_zone_name: Optional[str] = Field(None, description="Friendly name of assigned venue zone")
     model_ready: bool = Field(..., description="Whether model is loaded and ready")
     inference_fps: float = Field(0.0, description="Measured real inference FPS on CPU")
+    capture_fps: float = Field(0.0, description="Measured hardware frame delivery FPS")
     last_person_count: int = Field(0, description="Number of persons detected in latest frame")
     active_subscribers: int = Field(0, description="Number of connected WebSocket viewers")
     error_message: Optional[str] = Field(None, description="Last runtime capture error")
     timestamp: str = Field(..., description="Current status timestamp")
+
+
+class ZoneLiveStatus(BaseModel):
+    zone_id: str = Field(..., description="Unique zone identifier (e.g. 'zone-north-plaza')")
+    zone_code: str = Field(..., description="Short code (e.g. 'Z-01')")
+    zone_name: str = Field(..., description="Venue zone name")
+    area_sqm: float = Field(..., description="Configured usable area in square meters")
+    safe_capacity: int = Field(..., description="Configured safe capacity limit")
+    camera_assigned: bool = Field(..., description="Whether an active camera is mapped to this zone")
+    device_index: Optional[int] = Field(None, description="Active camera device index if assigned")
+    camera_name: Optional[str] = Field(None, description="Active camera name if assigned")
+    status: str = Field(..., description="'STREAMING', 'STALE', 'DISCONNECTED', or 'UNASSIGNED'")
+    instantaneous_count: Optional[int] = Field(None, description="Instantaneous person count from latest camera frame")
+    density_per_sqm: Optional[float] = Field(None, description="Calculated live density (persons / area_sqm)")
+    last_inference_time: Optional[str] = Field(None, description="ISO timestamp of last successful detection")
+    is_stale: bool = Field(True, description="Whether camera observation is stale (> 3 seconds old or stopped)")
+    data_source: str = Field("SIMULATED_FIXTURE", description="'LIVE_CAMERA_INFERENCE' or 'SIMULATED_FIXTURE'")
+    notes: str = Field(..., description="Operational transparency notes regarding provenance")
+
+
+class ZoneStatusListResponse(BaseModel):
+    zones: List[ZoneLiveStatus] = Field(default_factory=list, description="Live zone statuses")
+    active_camera_count: int = Field(0, description="Total cameras currently streaming")
+    timestamp: str = Field(..., description="Snapshot timestamp")
+    multiple_camera_disclaimer: str = Field(
+        "Multiple-camera aggregation does not blindly sum overlapping views to avoid double-counting. Each camera reports its individual instantaneous field-of-view count.",
+        description="Disclaimer on overlapping camera aggregation",
+    )
+
+
+class ClientFrameInferRequest(BaseModel):
+    image: str = Field(..., description="Base64 encoded JPEG or PNG image frame from browser camera")
+    zone_id: Optional[str] = Field("zone-north-plaza", description="Assigned venue zone ID")
+    camera_name: Optional[str] = Field("Browser Camera", description="Browser camera label or device name")
+    conf_threshold: float = Field(0.25, ge=0.05, le=0.95, description="Model confidence threshold")
+    client_id: Optional[str] = Field("client-default", description="Unique client session ID")
+
+
+class LocationSessionResponse(BaseModel):
+    session_id: str = Field(..., description="Unique 6-character session pairing ID")
+    token: str = Field(..., description="Session authentication token")
+    timestamp: str = Field(..., description="Session creation timestamp (ISO 8601)")
+
+
+class LocationUpdateRequest(BaseModel):
+    session_id: str = Field(..., description="Target session pairing ID")
+    token: str = Field(..., description="Session authentication token")
+    latitude: float = Field(..., ge=-90.0, le=90.0, description="Latitude in decimal degrees")
+    longitude: float = Field(..., ge=-180.0, le=180.0, description="Longitude in decimal degrees")
+    accuracy: float = Field(..., ge=0.0, description="Estimated accuracy in meters")
+    heading: Optional[float] = Field(None, description="Compass heading in degrees")
+    speed: Optional[float] = Field(None, description="Ground speed in m/s")
+    timestamp: Optional[str] = Field(None, description="Client ISO timestamp")
+
 

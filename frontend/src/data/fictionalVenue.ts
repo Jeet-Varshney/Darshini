@@ -1,13 +1,13 @@
 import type { VenueConfiguration } from '../types/venue';
 
 /**
- * Fictional Venue Configuration for CrowdFlow Sentinel Demo
+ * Fictional Venue Configuration for Darshini Demo
  * All zones, counts, gates, and road connections are simulated/deterministic demo data.
  * No real-world crowd counts or live surveillance feeds are claimed or represented.
  */
 export const FICTIONAL_VENUE: VenueConfiguration = {
-  id: 'venue-sentinel-park',
-  name: 'Sentinel Exhibition & Arena Precinct',
+  id: 'venue-darshini-park',
+  name: 'Darshini Exhibition & Arena Precinct',
   precinctType: 'Municipal Sports & Expo Complex (Fictional Configuration)',
   center: [28.6145, 77.2100],
   defaultZoom: 16,
@@ -230,6 +230,53 @@ export const FICTIONAL_VENUE: VenueConfiguration = {
         [28.6175, 77.2060]
       ],
       svgCoords: { x1: 40, y1: 480, x2: 40, y2: 20 }
+    }
+  ],
+  cameras: [
+    {
+      id: 'cam-01',
+      code: 'CAM-01',
+      name: 'North Gate Plaza Inflow Station',
+      assignedZoneId: 'zone-north-plaza',
+      coordinates: [28.6163, 77.2100],
+      svgPoint: { x: 440, y: 75 },
+      isConfiguredVenuePoint: true
+    },
+    {
+      id: 'cam-02',
+      code: 'CAM-02',
+      name: 'Central Promenade Spine Station',
+      assignedZoneId: 'zone-central-concourse',
+      coordinates: [28.6144, 77.2100],
+      svgPoint: { x: 440, y: 235 },
+      isConfiguredVenuePoint: true
+    },
+    {
+      id: 'cam-03',
+      code: 'CAM-03',
+      name: 'Pavilion Hall A (East) Arena Station',
+      assignedZoneId: 'zone-pavilion-east',
+      coordinates: [28.6144, 77.2125],
+      svgPoint: { x: 715, y: 235 },
+      isConfiguredVenuePoint: true
+    },
+    {
+      id: 'cam-04',
+      code: 'CAM-04',
+      name: 'West Emergency Corridor Station',
+      assignedZoneId: 'zone-west-corridor',
+      coordinates: [28.6144, 77.2075],
+      svgPoint: { x: 165, y: 235 },
+      isConfiguredVenuePoint: true
+    },
+    {
+      id: 'cam-05',
+      code: 'CAM-05',
+      name: 'South Metro Hub Transit Station',
+      assignedZoneId: 'zone-south-terminal',
+      coordinates: [28.6125, 77.2100],
+      svgPoint: { x: 440, y: 395 },
+      isConfiguredVenuePoint: true
     }
   ]
 };

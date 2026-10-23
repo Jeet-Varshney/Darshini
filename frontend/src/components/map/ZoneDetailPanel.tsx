@@ -1,15 +1,20 @@
 import React from 'react';
 import type { VenueZone } from '../../types/venue';
+import type { ZoneLiveStatus } from '../../types/detection';
 import { StatusPill } from '../layout/StatusPill';
 
 interface ZoneDetailPanelProps {
   zone: VenueZone | null;
+  liveZoneStatus?: ZoneLiveStatus | null;
   onClearSelection: () => void;
+  onAssignCamera?: (zoneId: string) => void;
 }
 
 export const ZoneDetailPanel: React.FC<ZoneDetailPanelProps> = ({
   zone,
-  onClearSelection
+  liveZoneStatus,
+  onClearSelection,
+  onAssignCamera,
 }) => {
   if (!zone) {
     return (
@@ -26,7 +31,7 @@ export const ZoneDetailPanel: React.FC<ZoneDetailPanelProps> = ({
             No Zone Selected
           </p>
           <p style={{ fontSize: 'var(--text-xs)', maxWidth: '240px', lineHeight: 1.5 }}>
-            Click any zone polygon on the map or select a zone from the left list to inspect capacity and simulated metrics.
+            Click any zone polygon on the map or select a zone from the left list to inspect capacity and metrics.
           </p>
         </div>
         <div className="panel-footer">
@@ -53,6 +58,9 @@ export const ZoneDetailPanel: React.FC<ZoneDetailPanelProps> = ({
     }
   };
 
+  const isLiveActive = liveZoneStatus?.camera_assigned && liveZoneStatus.status === 'STREAMING';
+  const isLiveStale = liveZoneStatus?.camera_assigned && liveZoneStatus.status !== 'STREAMING';
+
   return (
     <div className="panel-card panel-right">
       <div className="panel-header">
@@ -68,7 +76,8 @@ export const ZoneDetailPanel: React.FC<ZoneDetailPanelProps> = ({
             color: 'var(--accent-primary)',
             padding: '2px 6px',
             borderRadius: 'var(--radius-control)',
-            border: '1px solid var(--border-default)'
+            border: '1px solid var(--border-default)',
+            cursor: 'pointer',
           }}
           title="Clear active selection"
         >
@@ -91,21 +100,88 @@ export const ZoneDetailPanel: React.FC<ZoneDetailPanelProps> = ({
               backgroundColor: 'var(--surface-secondary)',
               borderRadius: 'var(--radius-badge)',
               border: '1px solid var(--border-default)',
-              color: 'var(--text-primary)'
+              color: 'var(--text-primary)',
             }}
           >
             Fruin LoS: {zone.fruinLoS}
           </span>
         </div>
 
-        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
           {zone.description}
         </p>
 
-        {/* Capacity Utilization Bar */}
+        {/* Milestone 3: Genuine Live Camera Observation Card */}
+        {isLiveActive ? (
+          <div className="live-observation-card" role="region" aria-label="Live Camera Feed Observation">
+            <div className="live-observation-header">
+              <span className="live-observation-title">
+                <span aria-hidden="true">📷</span>
+                <span>LIVE CAMERA OBSERVATION</span>
+              </span>
+              <span className="live-cam-badge">
+                ● STREAMING
+              </span>
+            </div>
+
+            <div className="live-observation-metric">
+              <span className="live-obs-val">{liveZoneStatus?.instantaneous_count ?? 0}</span>
+              <span className="live-obs-sub">persons detected in camera field of view</span>
+            </div>
+
+            <div className="live-observation-specs">
+              <div>
+                <strong>Assigned Camera:</strong> {liveZoneStatus?.camera_name || `Camera #${liveZoneStatus?.device_index}`}
+              </div>
+              <div>
+                <strong>Observed Density:</strong> {(liveZoneStatus?.density_per_sqm || 0).toFixed(4)} pax/m²
+                (Area: {zone.areaSqm.toLocaleString()} m²)
+              </div>
+              <div>
+                <strong>Last Inference:</strong> {liveZoneStatus?.last_inference_time ? liveZoneStatus.last_inference_time.substring(11, 19) + ' UTC' : 'Live'}
+              </div>
+            </div>
+
+            <div className="live-obs-provenance">
+              * Instantaneous field-of-view count. Never accumulated across frames. No GPS coordinates inferred.
+            </div>
+          </div>
+        ) : isLiveStale ? (
+          <div className="live-observation-card" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+            <div className="live-observation-header">
+              <span className="live-observation-title" style={{ color: '#B45309' }}>
+                <span aria-hidden="true">⚠️</span>
+                <span>CAMERA FEED STALE / OFFLINE</span>
+              </span>
+              <span className="stale-cam-badge">
+                ○ {liveZoneStatus?.status || 'DISCONNECTED'}
+              </span>
+            </div>
+            <p style={{ fontSize: '11px', color: '#92400E', margin: 0, lineHeight: 1.4 }}>
+              Assigned camera ({liveZoneStatus?.camera_name || 'Camera'}) is currently stopped or delayed. Preserving last known observation.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <button
+              type="button"
+              className="btn-assign-camera"
+              onClick={() => onAssignCamera && onAssignCamera(zone.id)}
+              title={`Switch to Camera Detection screen and map an active camera to ${zone.name}`}
+            >
+              <span>📷</span>
+              <span>Assign Live Camera to {zone.code}</span>
+            </button>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center' }}>
+              No active camera feed mapped. Displaying configured simulation baseline below.
+            </span>
+          </div>
+        )}
+
+        {/* Capacity Utilization Bar (Simulation Baseline) */}
         <div className="zone-capacity-bar-container">
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)' }}>
-            <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Capacity Saturation</span>
+            <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Capacity Saturation (Simulation)</span>
             <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>
               {utilizationPct}% ({zone.simulatedCount} / {zone.safeCapacity})
             </span>
@@ -131,7 +207,7 @@ export const ZoneDetailPanel: React.FC<ZoneDetailPanelProps> = ({
             backgroundColor: 'var(--surface-secondary)',
             borderRadius: 'var(--radius-control)',
             border: '1px solid var(--border-subtle)',
-            overflow: 'hidden'
+            overflow: 'hidden',
           }}
         >
           <div style={{ padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)' }}>
@@ -143,7 +219,7 @@ export const ZoneDetailPanel: React.FC<ZoneDetailPanelProps> = ({
             <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{zone.simulatedCount}</span>
           </div>
           <div style={{ padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)' }}>
-            <span style={{ color: 'var(--text-secondary)' }}>Calculated Density</span>
+            <span style={{ color: 'var(--text-secondary)' }}>Simulated Density</span>
             <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: zone.status === 'CRITICAL' ? 'var(--status-critical)' : 'inherit' }}>
               {zone.densityPerSqm} persons/m²
             </span>
@@ -156,7 +232,7 @@ export const ZoneDetailPanel: React.FC<ZoneDetailPanelProps> = ({
 
         {/* Data Integrity / Simulation Disclaimer */}
         <div className="data-integrity-notice">
-          <strong>⚠️ SIMULATED DEMO VALUE:</strong> Metrics shown are configured demonstration fixtures for testing situational awareness workflows. Not derived from live camera feeds.
+          <strong>OPERATIONAL RULE:</strong> Live camera feeds reflect genuine model inferences inside that camera's FOV. Unassigned zones display configured demo baselines and never substitute live inference without a camera.
         </div>
       </div>
 

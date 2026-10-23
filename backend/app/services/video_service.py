@@ -1,5 +1,5 @@
 """
-CrowdFlow Sentinel - Video Processing Service
+Darshini - Video Processing Service
 Decodes video frames using OpenCV, samples frames at controlled intervals,
 runs real model inference, generates annotated preview images, and aggregates telemetry.
 """
@@ -23,7 +23,7 @@ from app.config import (
 from app.schemas import BoundingBox, FrameDetection, DetectionResponse
 from app.services.model_service import ModelService, ModelUnavailableError
 
-logger = logging.getLogger("crowdflow.video_service")
+logger = logging.getLogger("darshini.video_service")
 
 
 class VideoProcessingError(Exception):
@@ -279,7 +279,7 @@ class VideoProcessor:
         cv2.addWeighted(overlay, 0.85, annotated, 0.15, 0, annotated)
 
         hud_text = (
-            f"CROWDFLOW SENTINEL | FRAME #{frame_idx} | "
+            f"DARSHINI CV | FRAME #{frame_idx} | "
             f"DETECTED PERSONS: {total_detected} | "
             f"MODEL: {model_name}"
         )

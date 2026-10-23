@@ -11,10 +11,13 @@ import {
   runVideoDetection,
   fetchSampleVideoFile,
   fetchAvailableCameras,
+  fetchCameraStatus,
   startLiveCamera,
   stopLiveCamera,
   createCameraWebSocket,
+  assignCameraZone,
 } from '../services/detectionApi';
+import { FICTIONAL_VENUE } from '../data/fictionalVenue';
 
 interface SampleOption {
   id: string;
@@ -42,40 +45,79 @@ const SAMPLE_OPTIONS: SampleOption[] = [
 ];
 
 type OperationMode = 'live-camera' | 'sample-file';
+type CameraSourceMode = 'browser' | 'server';
 
-export const CameraDetectionScreen: React.FC = () => {
+interface CameraDetectionScreenProps {
+  initialZoneId?: string | null;
+  onNavigateToZone?: (zoneId: string) => void;
+}
+
+export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
+  initialZoneId,
+  onNavigateToZone,
+}) => {
   // Mode selection: Live Camera vs Uploaded Sample Video
   const [activeMode, setActiveMode] = useState<OperationMode>('live-camera');
+
+  // Milestone 4: Camera Source Engine (Browser Webcam vs Server Local V4L2 Device)
+  const [cameraSourceMode, setCameraSourceMode] = useState<CameraSourceMode>('browser');
+
+  // Milestone 3: Camera-to-Zone Mapping state
+  const [assignedZoneId, setAssignedZoneId] = useState<string | null>(initialZoneId || 'zone-north-plaza');
+
+  useEffect(() => {
+    if (initialZoneId) {
+      setAssignedZoneId(initialZoneId);
+    }
+  }, [initialZoneId]);
 
   // Backend health & model state
   const [health, setHealth] = useState<BackendHealthStatus | null>(null);
   const [healthLoading, setHealthLoading] = useState<boolean>(true);
   const [healthError, setHealthError] = useState<string | null>(null);
 
-  // Live Camera state
-  const [availableCameras, setAvailableCameras] = useState<CameraDevice[]>([]);
-  const [camerasLoading, setCamerasLoading] = useState<boolean>(false);
-  const [camerasError, setCamerasError] = useState<string | null>(null);
-  const [selectedCameraIndex, setSelectedCameraIndex] = useState<number>(0);
+  // Common Live Camera State
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [isCameraStarting, setIsCameraStarting] = useState<boolean>(false);
   const [cameraStreamError, setCameraStreamError] = useState<string | null>(null);
 
+  // Browser Camera Discovery & Capture State (Milestone 4 Preferred Engine)
+  const [browserDevices, setBrowserDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedBrowserDeviceId, setSelectedBrowserDeviceId] = useState<string>('');
+  const [browserDevicesLoading, setBrowserDevicesLoading] = useState<boolean>(false);
+  const [browserDevicesError, setBrowserDevicesError] = useState<string | null>(null);
+
+  // Server Local V4L2 State (Host Edge Appliance Mode)
+  const [availableServerCameras, setAvailableServerCameras] = useState<CameraDevice[]>([]);
+  const [serverCamerasLoading, setServerCamerasLoading] = useState<boolean>(false);
+  const [serverCamerasError, setServerCamerasError] = useState<string | null>(null);
+  const [selectedServerCameraIndex, setSelectedServerCameraIndex] = useState<number>(0);
+
   // Live streaming frame & telemetry
   const [liveFramePacket, setLiveFramePacket] = useState<LiveStreamPacket | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [clientCaptureFps, setClientCaptureFps] = useState<number>(0.0);
+  const [confThreshold, setConfThreshold] = useState<number>(0.25);
 
-  // File analysis state
+  // Refs for client frame capture loop
+  const hiddenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const captureTimerRef = useRef<number | null>(null);
+  const isInferringRef = useRef<boolean>(false);
+  const captureTimestampsRef = useRef<number[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const clientIdRef = useRef<string>(`client-${Math.random().toString(36).substring(2, 10)}`);
+  const lastInferStartTimeRef = useRef<number>(0);
+
+  // File analysis state (Mode 2)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeSampleId, setActiveSampleId] = useState<string | null>('gate1');
-  const [confThreshold, setConfThreshold] = useState<number>(0.25);
   const [sampleFps, setSampleFps] = useState<number>(1.0);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>('/samples/gate1_sample.mp4');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [detectionResult, setDetectionResult] = useState<DetectionResponse | null>(null);
   const [selectedFrame, setSelectedFrame] = useState<FrameDetection | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 1. Fetch backend health
@@ -87,88 +129,363 @@ export const CameraDetectionScreen: React.FC = () => {
       setHealth(data);
     } catch (err: any) {
       setHealth(null);
-      setHealthError(err.message || 'Cannot reach FastAPI backend at http://localhost:8000');
+      setHealthError(err.message || 'Cannot reach FastAPI backend server');
     } finally {
       setHealthLoading(false);
     }
   }, []);
 
-  // 2. Discover available cameras on host
-  const loadCameras = useCallback(async () => {
-    setCamerasLoading(true);
-    setCamerasError(null);
+  // 2. Discover Browser Cameras via MediaDevices API (Universal Client Devices)
+  const refreshBrowserCameras = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      setBrowserDevicesError(
+        'navigator.mediaDevices is not available in this browser or context. Note: HTTPS or localhost is required for browser camera access.'
+      );
+      return;
+    }
+    setBrowserDevicesLoading(true);
+    setBrowserDevicesError(null);
     try {
-      const res = await fetchAvailableCameras();
-      setAvailableCameras(res.cameras);
-      // Select the first readable camera by default
-      const firstReadable = res.cameras.find((c) => c.is_readable);
-      if (firstReadable) {
-        setSelectedCameraIndex(firstReadable.index);
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+      setBrowserDevices(videoInputs);
+      if (videoInputs.length > 0) {
+        setSelectedBrowserDeviceId((prev) => (prev ? prev : videoInputs[0].deviceId));
       }
     } catch (err: any) {
-      setCamerasError(err.message || 'Failed to discover camera devices on host.');
+      setBrowserDevicesError(err.message || 'Failed to enumerate browser camera devices.');
     } finally {
-      setCamerasLoading(false);
+      setBrowserDevicesLoading(false);
     }
   }, []);
 
+  // 3. Discover Server V4L2 Cameras (Host Hardware Mode)
+  const loadServerCameras = useCallback(async () => {
+    setServerCamerasLoading(true);
+    setServerCamerasError(null);
+    try {
+      const res = await fetchAvailableCameras();
+      setAvailableServerCameras(res.cameras);
+      const firstReadable = res.cameras.find((c) => c.is_readable);
+      if (firstReadable) {
+        setSelectedServerCameraIndex(firstReadable.index);
+      }
+    } catch (err: any) {
+      setServerCamerasError(err.message || 'Failed to discover camera devices on host.');
+    } finally {
+      setServerCamerasLoading(false);
+    }
+  }, []);
+
+  // Helper to establish WebSocket connection with safe packet handling
+  const connectWebSocket = useCallback(() => {
+    if (wsRef.current) {
+      try {
+        wsRef.current.close();
+      } catch (e) {}
+      wsRef.current = null;
+    }
+
+    const ws = createCameraWebSocket(
+      (packet) => {
+        if (packet.type === 'frame') {
+          isInferringRef.current = false;
+          setLiveFramePacket(packet);
+          setCameraStreamError(null);
+        } else if (packet.type === 'error') {
+          isInferringRef.current = false;
+          setCameraStreamError(packet.error || 'Live camera stream encountered an error.');
+        } else if (packet.type === 'status' && packet.status === 'stopped') {
+          isInferringRef.current = false;
+          setIsCameraActive(false);
+        }
+      },
+      () => {
+        isInferringRef.current = false;
+        setCameraStreamError('Live WebSocket connection encountered a network error. Reconnecting...');
+      },
+      () => {
+        isInferringRef.current = false;
+      }
+    );
+
+    wsRef.current = ws;
+    return ws;
+  }, []);
+
+  // Initial mount: load health, browser cameras, and server cameras
   useEffect(() => {
     refreshHealth();
-    loadCameras();
-  }, [refreshHealth, loadCameras]);
+    refreshBrowserCameras();
+    loadServerCameras();
 
-  // Clean up live stream on unmount
+    // Check if server camera is already streaming in background
+    fetchCameraStatus()
+      .then((status) => {
+        if (status.is_streaming) {
+          setCameraSourceMode('server');
+          setIsCameraActive(true);
+          if (status.active_device_index !== null && status.active_device_index !== undefined) {
+            setSelectedServerCameraIndex(status.active_device_index);
+          }
+          if (status.assigned_zone_id) {
+            setAssignedZoneId(status.assigned_zone_id);
+          }
+          connectWebSocket();
+        }
+      })
+      .catch(() => {});
+  }, [refreshHealth, refreshBrowserCameras, loadServerCameras, connectWebSocket]);
+
+  // Clean unmount: stop all media tracks, interval, and WebSocket
   useEffect(() => {
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
+      if (captureTimerRef.current) {
+        clearInterval(captureTimerRef.current);
+        captureTimerRef.current = null;
       }
-      stopLiveCamera().catch(() => {});
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
+      if (wsRef.current) {
+        try {
+          wsRef.current.send(JSON.stringify({ action: 'client_stop', client_id: clientIdRef.current }));
+        } catch (e) {}
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, []);
 
-  // 3. Start Live Camera Stream
-  const handleStartCamera = async () => {
+  // Handle Dynamic Zone Assignment
+  const handleZoneChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newZoneId = e.target.value === 'none' ? null : e.target.value;
+    setAssignedZoneId(newZoneId);
+
+    if (isCameraActive) {
+      if (cameraSourceMode === 'server') {
+        try {
+          await assignCameraZone(selectedServerCameraIndex, newZoneId);
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ action: 'assign_zone', zone_id: newZoneId }));
+          }
+        } catch (err: any) {
+          console.warn('Failed to assign camera zone dynamically:', err);
+        }
+      }
+      // For browser mode, next frame sent over WebSocket automatically includes updated assignedZoneId!
+    }
+  };
+
+  // Switch Browser Camera Device on the fly without stopping application
+  const handleSwitchBrowserCamera = async (newDeviceId: string) => {
+    setSelectedBrowserDeviceId(newDeviceId);
+    if (isCameraActive && cameraSourceMode === 'browser') {
+      try {
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: newDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false,
+        });
+        mediaStreamRef.current = stream;
+        if (hiddenVideoRef.current) {
+          hiddenVideoRef.current.srcObject = stream;
+          await hiddenVideoRef.current.play().catch(() => {});
+        }
+      } catch (err: any) {
+        setCameraStreamError(`Failed to switch camera: ${err.message}`);
+      }
+    }
+  };
+
+  // =========================================================================
+  // Browser Camera Capture Engine (Milestone 4 - Universal Webcams)
+  // =========================================================================
+  const handleStartBrowserCamera = async () => {
     setIsCameraStarting(true);
     setCameraStreamError(null);
 
     try {
-      // Step A: Call backend REST to start capture
-      await startLiveCamera(selectedCameraIndex, confThreshold);
-      setIsCameraActive(true);
-
-      // Step B: Connect WebSocket for live frame & metadata reception
-      if (wsRef.current) {
-        wsRef.current.close();
+      // 1. Release any previously active tracks
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
       }
 
-      const ws = createCameraWebSocket(
-        (packet) => {
-          if (packet.type === 'frame') {
-            setLiveFramePacket(packet);
-          } else if (packet.type === 'status' && packet.status === 'stopped') {
-            setIsCameraActive(false);
-          }
-        },
-        () => {
-          setCameraStreamError('Live WebSocket streaming connection encountered an error.');
-        },
-        () => {
-          setIsCameraActive(false);
-        }
-      );
+      // 2. Request user media with device constraint if selected
+      const constraints: MediaStreamConstraints = {
+        video: selectedBrowserDeviceId
+          ? { deviceId: { exact: selectedBrowserDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+          : { width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
+      };
 
-      wsRef.current = ws;
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      mediaStreamRef.current = stream;
+
+      // Re-enumerate devices so browser populates device labels now that permission was granted
+      await refreshBrowserCameras();
+
+      // 3. Attach stream to video element and track lifecycle listeners
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          console.warn('Video track ended (USB device unplugged or stopped).');
+          setCameraStreamError('Mobile USB camera was disconnected or stopped.');
+          handleStopBrowserCamera();
+        };
+        videoTrack.onmute = () => {
+          console.warn('Video track muted.');
+          setCameraStreamError('Camera stream paused: mobile phone screen may be locked or app backgrounded.');
+        };
+        videoTrack.onunmute = () => {
+          console.info('Video track unmuted.');
+          setCameraStreamError(null);
+        };
+      }
+
+      if (hiddenVideoRef.current) {
+        hiddenVideoRef.current.srcObject = stream;
+        await hiddenVideoRef.current.play().catch(() => {});
+      }
+
+      // 4. Connect WebSocket
+      connectWebSocket();
+
+      // 5. Initialize Frame Dispatch Loop (bounded capacity-1 with watchdog timer, target ~12-15 FPS = 80ms)
+      isInferringRef.current = false;
+      lastInferStartTimeRef.current = 0;
+      captureTimestampsRef.current = [];
+
+      if (captureTimerRef.current) {
+        clearInterval(captureTimerRef.current);
+      }
+
+      const activeDev = browserDevices.find((d) => d.deviceId === selectedBrowserDeviceId);
+      const camLabel = activeDev?.label || 'Browser Camera (This Device)';
+
+      captureTimerRef.current = window.setInterval(() => {
+        if (!hiddenVideoRef.current || !offscreenCanvasRef.current) return;
+
+        const now = Date.now();
+
+        // Watchdog: If in-flight inference has been pending for over 2.0 seconds, force-reset the flag
+        if (isInferringRef.current && now - lastInferStartTimeRef.current > 2000) {
+          console.warn('Inference watchdog: pending frame timed out after 2000ms. Resetting in-flight flag.');
+          isInferringRef.current = false;
+        }
+
+        // Bounded capacity-1: Skip frame if previous frame is still undergoing inference
+        if (isInferringRef.current) {
+          return;
+        }
+
+        const video = hiddenVideoRef.current;
+        if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) return;
+
+        const canvas = offscreenCanvasRef.current;
+        canvas.width = Math.min(video.videoWidth, 640);
+        canvas.height = Math.round((canvas.width / video.videoWidth) * video.videoHeight);
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const b64Data = canvas.toDataURL('image/jpeg', 0.75);
+
+        // Record timestamp for local capture FPS calculation
+        captureTimestampsRef.current.push(now);
+        if (captureTimestampsRef.current.length > 20) {
+          captureTimestampsRef.current.shift();
+        }
+        if (captureTimestampsRef.current.length >= 2) {
+          const dt = (captureTimestampsRef.current[captureTimestampsRef.current.length - 1] - captureTimestampsRef.current[0]) / 1000;
+          if (dt > 0) {
+            setClientCaptureFps(Math.round(((captureTimestampsRef.current.length - 1) / dt) * 10) / 10);
+          }
+        }
+
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          isInferringRef.current = true;
+          lastInferStartTimeRef.current = now;
+          wsRef.current.send(
+            JSON.stringify({
+              action: 'infer_frame',
+              client_id: clientIdRef.current,
+              image: b64Data,
+              zone_id: assignedZoneId,
+              camera_name: camLabel,
+              conf_threshold: confThreshold,
+            })
+          );
+        }
+      }, 80);
+
+      setIsCameraActive(true);
     } catch (err: any) {
       setIsCameraActive(false);
-      setCameraStreamError(err.message || 'Failed to start camera device.');
+      let errorMsg = err.message || 'Failed to access browser camera.';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMsg = 'Camera permission was denied in your browser. Allow camera permission in your browser address bar to use live detection.';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        errorMsg = 'No video capture device was found on this system.';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        errorMsg = 'Camera is currently busy or in use by another tab or application.';
+      }
+      setCameraStreamError(errorMsg);
     } finally {
       setIsCameraStarting(false);
     }
   };
 
-  // 4. Stop Live Camera Stream
-  const handleStopCamera = async () => {
+  const handleStopBrowserCamera = () => {
+    if (captureTimerRef.current) {
+      clearInterval(captureTimerRef.current);
+      captureTimerRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (hiddenVideoRef.current) {
+      hiddenVideoRef.current.srcObject = null;
+    }
+    if (wsRef.current) {
+      try {
+        wsRef.current.send(JSON.stringify({ action: 'client_stop', client_id: clientIdRef.current }));
+      } catch (e) {}
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    isInferringRef.current = false;
+    setIsCameraActive(false);
+    setLiveFramePacket(null);
+    setClientCaptureFps(0);
+  };
+
+  // =========================================================================
+  // Server Hardware Camera Engine (Local Host Linux V4L2 Device)
+  // =========================================================================
+  const handleStartServerCamera = async () => {
+    setIsCameraStarting(true);
+    setCameraStreamError(null);
+
+    try {
+      await startLiveCamera(selectedServerCameraIndex, confThreshold, assignedZoneId);
+      setIsCameraActive(true);
+      connectWebSocket();
+    } catch (err: any) {
+      setIsCameraActive(false);
+      setCameraStreamError(err.message || 'Failed to start camera device on server host.');
+    } finally {
+      setIsCameraStarting(false);
+    }
+  };
+
+  const handleStopServerCamera = async () => {
     try {
       if (wsRef.current) {
         wsRef.current.send(JSON.stringify({ action: 'stop' }));
@@ -177,14 +494,33 @@ export const CameraDetectionScreen: React.FC = () => {
       }
       await stopLiveCamera();
     } catch (err) {
-      console.warn('Error stopping camera:', err);
+      console.warn('Error stopping server camera:', err);
     } finally {
       setIsCameraActive(false);
       setLiveFramePacket(null);
     }
   };
 
-  // 5. File Analysis Handlers
+  // Dispatch Start / Stop based on active source mode
+  const handleStartCamera = () => {
+    if (cameraSourceMode === 'browser') {
+      handleStartBrowserCamera();
+    } else {
+      handleStartServerCamera();
+    }
+  };
+
+  const handleStopCamera = () => {
+    if (cameraSourceMode === 'browser') {
+      handleStopBrowserCamera();
+    } else {
+      handleStopServerCamera();
+    }
+  };
+
+  // =========================================================================
+  // Mode 2: File Analysis Handlers
+  // =========================================================================
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -255,16 +591,54 @@ export const CameraDetectionScreen: React.FC = () => {
         setSelectedFrame(matching);
       }
     } catch (err: any) {
-      setProcessingError(err.message || 'Detection failed. Please check the backend connection.');
+      setProcessingError(err.message || 'Detection failed. Please check backend connection.');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const activeCameraObj = availableCameras.find((c) => c.index === selectedCameraIndex);
+  const activeServerCameraObj = availableServerCameras.find((c) => c.index === selectedServerCameraIndex);
+  const activeBrowserCameraObj = browserDevices.find((d) => d.deviceId === selectedBrowserDeviceId);
+  const assignedZoneObj = FICTIONAL_VENUE.zones.find((z) => z.id === assignedZoneId);
+
+  // Compute stream connection status badge
+  let streamStatusText = 'STREAM STANDBY';
+  let streamStatusClass = 'badge-status-other';
+
+  if (!health?.model_ready) {
+    streamStatusText = 'MODEL UNAVAILABLE';
+    streamStatusClass = 'badge-status-error';
+  } else if (isCameraStarting) {
+    streamStatusText = 'CONNECTING...';
+    streamStatusClass = 'badge-status-starting';
+  } else if (isCameraActive && liveFramePacket) {
+    streamStatusText = 'INFERENCE RUNNING';
+    streamStatusClass = 'badge-status-completed';
+  } else if (isCameraActive && !liveFramePacket) {
+    streamStatusText = 'AWAITING FRAMES...';
+    streamStatusClass = 'badge-status-starting';
+  }
 
   return (
     <div className="detection-screen" role="tabpanel" id="panel-camera-detection" aria-labelledby="tab-camera-detection">
+      {/* Off-screen video element with layout presence to ensure continuous hardware frame decoding */}
+      <video
+        ref={hiddenVideoRef}
+        playsInline
+        muted
+        autoPlay
+        style={{
+          position: 'fixed',
+          top: '-9999px',
+          left: '-9999px',
+          width: '320px',
+          height: '240px',
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
+      />
+      <canvas ref={offscreenCanvasRef} style={{ display: 'none' }} />
+
       {/* Top Protocol & Backend Status Banner */}
       <div className="detection-header-card">
         <div className="detection-header-left">
@@ -274,7 +648,7 @@ export const CameraDetectionScreen: React.FC = () => {
             <span className="detection-version-tag">YOLOv8n CPU</span>
           </div>
           <p className="detection-screen-subtitle">
-            Universal camera capture supporting built-in webcams, USB devices, virtual cameras (Iriun/DroidCam), and sample video verification.
+            Universal camera capture supporting local client webcams (MacBook, USB, phone/virtual cams), server devices, and hosted model inference.
           </p>
         </div>
 
@@ -296,7 +670,7 @@ export const CameraDetectionScreen: React.FC = () => {
                 type="button"
                 className="btn-retry-health"
                 onClick={refreshHealth}
-                title="Retry connecting to localhost:8000"
+                title="Retry connecting to backend"
               >
                 Retry
               </button>
@@ -349,7 +723,7 @@ export const CameraDetectionScreen: React.FC = () => {
           </svg>
         </div>
         <div className="disclaimer-text-col">
-          <strong>OPERATIONAL TRANSPARENCY:</strong> Camera capture and inference run locally on this host using actual V4L2 device nodes and the pretrained YOLOv8 model running on CPU. Bounding boxes, confidence scores, and frame counts reflect genuine model predictions. No synthetic detections are ever substituted.
+          <strong>OPERATIONAL TRANSPARENCY:</strong> Frames are captured from the user&apos;s browser or host hardware and streamed securely to the central Darshini CV backend. Bounding boxes, confidence scores, and person IDs reflect genuine model predictions. No synthetic detections are ever substituted.
         </div>
       </div>
 
@@ -367,75 +741,260 @@ export const CameraDetectionScreen: React.FC = () => {
               </span>
             </div>
 
-            {/* Camera Source Selector */}
-            <div className="camera-picker-group">
-              <div className="picker-header-row">
-                <label htmlFor="camera-select" className="control-section-label">
-                  Select Video Capture Device:
-                </label>
+            {/* Milestone 4: Camera Engine Architecture Switcher */}
+            <div style={{ marginBottom: 'var(--space-3)' }}>
+              <label className="control-section-label">Camera Capture Engine:</label>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '6px',
+                  backgroundColor: 'var(--surface-secondary)',
+                  padding: '4px',
+                  borderRadius: 'var(--radius-control)',
+                  border: '1px solid var(--border-default)',
+                }}
+              >
                 <button
                   type="button"
-                  className="btn-refresh-cameras"
-                  onClick={loadCameras}
-                  disabled={camerasLoading || isCameraActive}
-                  title="Rescan /sys/class/video4linux for newly connected USB or virtual devices"
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 'var(--radius-control)',
+                    border: 'none',
+                    fontSize: '11px',
+                    fontWeight: cameraSourceMode === 'browser' ? 700 : 500,
+                    backgroundColor: cameraSourceMode === 'browser' ? 'var(--accent-primary)' : 'transparent',
+                    color: cameraSourceMode === 'browser' ? '#FFFFFF' : 'var(--text-secondary)',
+                    cursor: isCameraActive ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => !isCameraActive && setCameraSourceMode('browser')}
+                  disabled={isCameraActive}
+                  title="Capture webcam directly from your browser (MacBook, USB, mobile, or virtual camera)"
                 >
-                  {camerasLoading ? 'Scanning...' : '↻ Rescan Devices'}
+                  🌐 Browser Camera (Client)
+                </button>
+
+                <button
+                  type="button"
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 'var(--radius-control)',
+                    border: 'none',
+                    fontSize: '11px',
+                    fontWeight: cameraSourceMode === 'server' ? 700 : 500,
+                    backgroundColor: cameraSourceMode === 'server' ? 'var(--accent-primary)' : 'transparent',
+                    color: cameraSourceMode === 'server' ? '#FFFFFF' : 'var(--text-secondary)',
+                    cursor: isCameraActive ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => !isCameraActive && setCameraSourceMode('server')}
+                  disabled={isCameraActive}
+                  title="Capture from video device on the backend host system (/dev/video*)"
+                >
+                  🖥️ Server Hardware (V4L2)
                 </button>
               </div>
+            </div>
 
-              {camerasError ? (
-                <div className="device-scan-error">
-                  <span>Warning: {camerasError}</span>
+            {/* ENGINE A: BROWSER MEDIA DEVICES (Preferred Architecture) */}
+            {cameraSourceMode === 'browser' ? (
+              <div className="camera-picker-group">
+                <div className="picker-header-row">
+                  <label htmlFor="browser-camera-select" className="control-section-label">
+                    Browser Video Input Device:
+                  </label>
+                  <button
+                    type="button"
+                    className="btn-refresh-cameras"
+                    onClick={refreshBrowserCameras}
+                    disabled={browserDevicesLoading}
+                    title="Enumerate media devices connected to your browser"
+                  >
+                    {browserDevicesLoading ? 'Scanning...' : '↻ Rescan Inputs'}
+                  </button>
                 </div>
-              ) : availableCameras.length === 0 ? (
-                <div className="device-scan-empty">
-                  <span>No video devices detected on this host. Connect a USB webcam or virtual device.</span>
-                </div>
-              ) : (
-                <select
-                  id="camera-select"
-                  className="camera-dropdown-select"
-                  value={selectedCameraIndex}
-                  onChange={(e) => setSelectedCameraIndex(parseInt(e.target.value, 10))}
-                  disabled={isCameraActive || isCameraStarting}
-                >
-                  {availableCameras.map((cam) => (
-                    <option
-                      key={cam.id}
-                      value={cam.index}
-                      disabled={!cam.is_readable}
-                    >
-                      {cam.is_readable ? '● ' : '○ '}
-                      {cam.name} [{cam.device_path}] — {cam.is_readable ? `Ready (${cam.resolution})` : `Unavailable (${cam.error_reason || 'Cannot read'})`}
-                    </option>
-                  ))}
-                </select>
-              )}
 
-              {/* Selected Camera Specs Pill */}
-              {activeCameraObj && (
+                {browserDevicesError ? (
+                  <div className="device-scan-error">
+                    <span>{browserDevicesError}</span>
+                  </div>
+                ) : browserDevices.length === 0 ? (
+                  <div className="device-scan-empty">
+                    <span>
+                      Click <strong>Start Camera Stream</strong> to request browser camera permission, or connect a webcam.
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    id="browser-camera-select"
+                    className="camera-dropdown-select"
+                    value={selectedBrowserDeviceId}
+                    onChange={(e) => handleSwitchBrowserCamera(e.target.value)}
+                  >
+                    {browserDevices.map((dev, idx) => (
+                      <option key={dev.deviceId || idx} value={dev.deviceId}>
+                        ● {dev.label || `Camera ${idx + 1} (${dev.deviceId ? dev.deviceId.substring(0, 8) + '...' : 'Default'})`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Browser Camera Specs Card */}
                 <div className="camera-spec-card">
                   <div className="spec-row">
-                    <span className="spec-label">Device Node:</span>
-                    <span className="spec-value font-mono">{activeCameraObj.device_path}</span>
+                    <span className="spec-label">Input Source:</span>
+                    <span className="spec-value font-mono">
+                      {activeBrowserCameraObj?.label || 'Browser Default Webcam'}
+                    </span>
                   </div>
                   <div className="spec-row">
-                    <span className="spec-label">Hardware Type:</span>
+                    <span className="spec-label">Architecture:</span>
                     <span className="spec-value">
-                      <span className={`type-tag ${activeCameraObj.device_type === 'VIRTUAL' ? 'type-tag-virtual' : 'type-tag-physical'}`}>
-                        {activeCameraObj.device_type}
+                      <span className="type-tag type-tag-physical">
+                        CLIENT BROWSER CAPTURE → CLOUD INFERENCE
                       </span>
                     </span>
                   </div>
                   <div className="spec-row">
-                    <span className="spec-label">Capture Readiness:</span>
-                    <span className={`spec-value ${activeCameraObj.is_readable ? 'spec-ready' : 'spec-unreadable'}`}>
-                      {activeCameraObj.is_readable ? `Confirmed (${activeCameraObj.resolution})` : 'Unreadable / In Use'}
+                    <span className="spec-label">Device Discovery:</span>
+                    <span className="spec-value spec-ready">
+                      Dynamic navigator.mediaDevices ({browserDevices.length} available)
                     </span>
                   </div>
                 </div>
-              )}
+              </div>
+            ) : (
+              /* ENGINE B: SERVER V4L2 DEVICES (Local Host Hardware Mode) */
+              <div className="camera-picker-group">
+                <div className="picker-header-row">
+                  <label htmlFor="camera-select" className="control-section-label">
+                    Host Video Device Node (/dev/video*):
+                  </label>
+                  <button
+                    type="button"
+                    className="btn-refresh-cameras"
+                    onClick={loadServerCameras}
+                    disabled={serverCamerasLoading || isCameraActive}
+                    title="Rescan /sys/class/video4linux on server host"
+                  >
+                    {serverCamerasLoading ? 'Scanning...' : '↻ Rescan Host'}
+                  </button>
+                </div>
+
+                {serverCamerasError ? (
+                  <div className="device-scan-error">
+                    <span>Warning: {serverCamerasError}</span>
+                  </div>
+                ) : availableServerCameras.length === 0 ? (
+                  <div className="device-scan-empty">
+                    <span>No video devices detected on server host.</span>
+                  </div>
+                ) : (
+                  <select
+                    id="camera-select"
+                    className="camera-dropdown-select"
+                    value={selectedServerCameraIndex}
+                    onChange={(e) => setSelectedServerCameraIndex(parseInt(e.target.value, 10))}
+                    disabled={isCameraActive || isCameraStarting}
+                  >
+                    {availableServerCameras.map((cam) => (
+                      <option key={cam.id} value={cam.index} disabled={!cam.is_readable}>
+                        {cam.is_readable ? '● ' : '○ '}
+                        {cam.name} [{cam.device_path}] — {cam.is_readable ? `Ready (${cam.resolution})` : `Unavailable (${cam.error_reason || 'Cannot read'})`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {activeServerCameraObj && (
+                  <div className="camera-spec-card">
+                    <div className="spec-row">
+                      <span className="spec-label">Device Node:</span>
+                      <span className="spec-value font-mono">{activeServerCameraObj.device_path}</span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">Hardware Type:</span>
+                      <span className="spec-value">
+                        <span className={`type-tag ${activeServerCameraObj.device_type === 'VIRTUAL' ? 'type-tag-virtual' : 'type-tag-physical'}`}>
+                          {activeServerCameraObj.device_type}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="spec-row">
+                      <span className="spec-label">Capture Readiness:</span>
+                      <span className={`spec-value ${activeServerCameraObj.is_readable ? 'spec-ready' : 'spec-unreadable'}`}>
+                        {activeServerCameraObj.is_readable ? `Confirmed (${activeServerCameraObj.resolution})` : 'Unreadable / In Use'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Venue Zone Assignment */}
+            <div className="zone-mapping-group">
+              <div className="zone-mapping-header">
+                <label htmlFor="zone-select" className="control-section-label" style={{ margin: 0 }}>
+                  Assign Camera to Venue Zone:
+                </label>
+                {assignedZoneObj && (
+                  <button
+                    type="button"
+                    className="btn-view-zone-map"
+                    onClick={() => onNavigateToZone?.(assignedZoneId!)}
+                    title="View mapped zone in Live Operations Command Map"
+                  >
+                    <span>📍</span>
+                    <span>View in Map →</span>
+                  </button>
+                )}
+              </div>
+
+              <select
+                id="zone-select"
+                className="camera-dropdown-select"
+                value={assignedZoneId || 'none'}
+                onChange={handleZoneChange}
+              >
+                <option value="none">— Standalone / Unassigned CV Feed —</option>
+                {FICTIONAL_VENUE.zones.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {z.code}: {z.name} ({z.areaSqm.toLocaleString()} m² • Cap: {z.safeCapacity.toLocaleString()})
+                  </option>
+                ))}
+              </select>
+
+              <div className="zone-mapping-card">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Assignment Status:</span>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '1px 6px',
+                      borderRadius: 'var(--radius-badge)',
+                      backgroundColor: assignedZoneObj ? 'var(--status-positive-bg)' : 'var(--surface-secondary)',
+                      color: assignedZoneObj ? 'var(--status-positive)' : 'var(--text-secondary)',
+                      border: '1px solid ' + (assignedZoneObj ? 'var(--status-positive-border)' : 'var(--border-default)'),
+                    }}
+                  >
+                    {assignedZoneObj ? `MAPPED: ${assignedZoneObj.code}` : 'STANDALONE CV'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                  {assignedZoneObj ? (
+                    <>
+                      Inference updates <strong>{assignedZoneObj.name}</strong> ({assignedZoneObj.code}). Unassigned zones preserve their baseline.
+                    </>
+                  ) : (
+                    <>
+                      Camera is not mapped to any venue zone. Detections remain in standalone CV monitor.
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Inference Confidence Parameter */}
@@ -456,7 +1015,6 @@ export const CameraDetectionScreen: React.FC = () => {
                   value={confThreshold}
                   onChange={(e) => setConfThreshold(parseFloat(e.target.value))}
                   className="param-slider"
-                  disabled={isCameraActive}
                 />
                 <span className="param-hint">Strictly filters live detections to person class with confidence &ge; {confThreshold}</span>
               </div>
@@ -469,17 +1027,12 @@ export const CameraDetectionScreen: React.FC = () => {
                   type="button"
                   className="btn-start-camera"
                   onClick={handleStartCamera}
-                  disabled={
-                    isCameraStarting ||
-                    !health?.model_ready ||
-                    !activeCameraObj ||
-                    !activeCameraObj.is_readable
-                  }
+                  disabled={isCameraStarting || !health?.model_ready}
                 >
                   {isCameraStarting ? (
                     <>
                       <span className="action-spinner" />
-                      <span>Opening Device & Initiating Model Stream...</span>
+                      <span>Requesting Device & Initiating Pipeline...</span>
                     </>
                   ) : (
                     <>
@@ -487,7 +1040,11 @@ export const CameraDetectionScreen: React.FC = () => {
                         <circle cx="12" cy="12" r="10" />
                         <polygon points="10 8 16 12 10 16 10 8" />
                       </svg>
-                      <span>Start Camera Stream</span>
+                      <span>
+                        {cameraSourceMode === 'browser'
+                          ? 'Start Browser Camera Stream'
+                          : 'Start Server Camera Stream'}
+                      </span>
                     </>
                   )}
                 </button>
@@ -505,7 +1062,7 @@ export const CameraDetectionScreen: React.FC = () => {
               )}
             </div>
 
-            {/* Error Notification Banner */}
+            {/* Actionable Error Notification Banner */}
             {cameraStreamError && (
               <div className="processing-error-banner" role="alert">
                 <div className="error-icon-col">
@@ -516,7 +1073,7 @@ export const CameraDetectionScreen: React.FC = () => {
                   </svg>
                 </div>
                 <div className="error-text-col">
-                  <strong>Camera Error:</strong> {cameraStreamError}
+                  <strong>Camera Notice:</strong> {cameraStreamError}
                 </div>
                 <button
                   type="button"
@@ -534,48 +1091,67 @@ export const CameraDetectionScreen: React.FC = () => {
           <section className="detection-panel-card" aria-label="Live Stream Telemetry">
             <div className="panel-card-header">
               <h3 className="panel-card-title">2. Live Stream & Computer Vision Telemetry</h3>
-              <span className={`panel-card-badge ${isCameraActive ? 'badge-status-completed' : 'badge-status-other'}`}>
-                {isCameraActive ? 'LIVE ACTIVE' : 'STREAM STANDBY'}
+              <span className={`panel-card-badge ${streamStatusClass}`}>
+                {streamStatusText}
               </span>
             </div>
 
             {/* Live Metrics Row */}
-            <div className="metrics-summary-row">
+            <div className="metrics-summary-row" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
               <div className="metric-box">
                 <span className="metric-box-label">CURRENT PERSON COUNT</span>
                 <span className={`metric-box-val ${liveFramePacket && (liveFramePacket.person_count || 0) > 0 ? 'metric-val-highlight' : 'metric-val-zero'}`}>
                   {isCameraActive && liveFramePacket ? liveFramePacket.person_count ?? 0 : '—'}
                 </span>
-                <span className="metric-box-sub">in live frame</span>
+                <span className="metric-box-sub">instantaneous FOV</span>
               </div>
 
               <div className="metric-box">
-                <span className="metric-box-label">MEASURED INFERENCE FPS</span>
+                <span className="metric-box-label">SCENE TRACKING</span>
+                <span className="metric-box-val font-mono">
+                  {isCameraActive && liveFramePacket
+                    ? `${liveFramePacket.tracked_persons_count ?? liveFramePacket.person_count ?? 0}`
+                    : '—'}
+                </span>
+                <span className="metric-box-sub">
+                  {isCameraActive && liveFramePacket
+                    ? `${liveFramePacket.stationary_count ?? 0} stationary`
+                    : 'stationary hysteresis'}
+                </span>
+              </div>
+
+              <div className="metric-box">
+                <span className="metric-box-label">CAPTURE RATE</span>
+                <span className="metric-box-val font-mono">
+                  {isCameraActive
+                    ? cameraSourceMode === 'browser'
+                      ? `${clientCaptureFps.toFixed(1)} FPS`
+                      : `${(liveFramePacket?.capture_fps || 0).toFixed(1)} FPS`
+                    : '—'}
+                </span>
+                <span className="metric-box-sub">hardware delivery</span>
+              </div>
+
+              <div className="metric-box">
+                <span className="metric-box-label">INFERENCE RATE</span>
                 <span className="metric-box-val font-mono">
                   {isCameraActive && liveFramePacket && liveFramePacket.inference_fps !== undefined
                     ? `${liveFramePacket.inference_fps.toFixed(1)} FPS`
                     : '—'}
                 </span>
-                <span className="metric-box-sub">genuine CPU throughput</span>
+                <span className="metric-box-sub">hosted YOLOv8</span>
               </div>
 
               <div className="metric-box">
-                <span className="metric-box-label">INFERENCE LATENCY</span>
-                <span className="metric-box-val font-mono">
-                  {isCameraActive && liveFramePacket && liveFramePacket.inference_duration_ms !== undefined
-                    ? `${liveFramePacket.inference_duration_ms.toFixed(0)} ms`
-                    : '—'}
-                </span>
-                <span className="metric-box-sub">YOLOv8 CPU compute</span>
-              </div>
-
-              <div className="metric-box">
-                <span className="metric-box-label">ACTIVE DEVICE</span>
-                <span className="metric-box-val" style={{ fontSize: 'var(--text-base)', paddingTop: '6px' }}>
-                  {isCameraActive ? `DEV #${selectedCameraIndex}` : 'NONE'}
+                <span className="metric-box-label">MAPPED ZONE</span>
+                <span
+                  className="metric-box-val font-mono"
+                  style={{ color: assignedZoneObj ? 'var(--status-positive)' : 'var(--text-muted)' }}
+                >
+                  {assignedZoneObj ? assignedZoneObj.code : 'None'}
                 </span>
                 <span className="metric-box-sub">
-                  {isCameraActive && activeCameraObj ? activeCameraObj.name.substring(0, 20) : 'Standby'}
+                  {assignedZoneObj ? assignedZoneObj.name : 'Standalone CV'}
                 </span>
               </div>
             </div>
@@ -590,7 +1166,14 @@ export const CameraDetectionScreen: React.FC = () => {
                       {liveFramePacket.camera_name} • Stream Timestamp: {liveFramePacket.timestamp.substring(11, 19)} UTC
                     </span>
                   </div>
-                  <span className="provenance-chip">LIVE INFERENCE OVERLAY</span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {liveFramePacket.inference_duration_ms !== undefined && (
+                      <span className="provenance-chip" style={{ background: '#E6F4EA', color: '#137333', border: '1px solid #CEEAD6' }}>
+                        INFER: {liveFramePacket.inference_duration_ms.toFixed(0)}ms
+                      </span>
+                    )}
+                    <span className="provenance-chip">LIVE INFERENCE OVERLAY</span>
+                  </div>
                 </div>
 
                 <div className="preview-image-wrapper">
@@ -602,20 +1185,63 @@ export const CameraDetectionScreen: React.FC = () => {
                 </div>
 
                 {/* Live Detected Bounding Box Inspector */}
-                {liveFramePacket.bounding_boxes && liveFramePacket.bounding_boxes.length > 0 && (
+                {liveFramePacket.detections && liveFramePacket.detections.length > 0 && (
                   <div className="live-boxes-list">
                     <span className="live-boxes-title">
-                      Detected Persons ({liveFramePacket.bounding_boxes.length}):
+                      Detected Persons ({liveFramePacket.detections.length}):
                     </span>
                     <div className="live-boxes-chips">
-                      {liveFramePacket.bounding_boxes.map((b, idx) => (
+                      {liveFramePacket.detections.map((d, idx) => (
                         <span key={idx} className="live-box-pill">
-                          Person #{idx + 1}: {(b.confidence * 100).toFixed(0)}% conf • Box: [{b.box_pixels.join(', ')}]
+                          Person #{d.track_id || idx + 1}: {(d.confidence * 100).toFixed(0)}% conf
+                          {d.is_stationary ? ' [STATIONARY]' : ''} • Box: [{d.box_pixels.join(', ')}]
                         </span>
                       ))}
                     </div>
                   </div>
                 )}
+
+                {/* Milestone 4: Operational Guardrails Notice */}
+                <div
+                  style={{
+                    marginTop: 'var(--space-3)',
+                    backgroundColor: 'var(--surface-secondary)',
+                    borderRadius: 'var(--radius-control)',
+                    border: '1px solid var(--border-default)',
+                    padding: 'var(--space-3)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>1. Non-Accumulation Rule:</strong> Count reflects instantaneous persons in view ({liveFramePacket.person_count ?? 0} pax). Consecutive frames are never summed or accumulated across time.
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>2. Zone Isolation:</strong> This camera strictly updates {assignedZoneObj ? `${assignedZoneObj.name} (${assignedZoneObj.code})` : 'its local monitor'}. Unassigned zones preserve their baseline data.
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>3. Universal Compatibility:</strong> Supports built-in laptop webcams, external USB cameras, mobile/virtual webcams (Iriun, DroidCam, OBS).
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>4. Central Cloud Inference:</strong> Camera access is handled safely in the user&apos;s browser while YOLOv8 execution is centralized on the backend.
+                  </div>
+                </div>
+              </div>
+            ) : isCameraStarting || isCameraActive ? (
+              <div className="detection-empty-state">
+                <div className="empty-state-card">
+                  <div className="spinner-dot" style={{ width: '24px', height: '24px', margin: '0 auto' }} />
+                  <h4 className="empty-state-title">Connecting to Camera & Hosted CV Model...</h4>
+                  <p className="empty-state-desc">
+                    {cameraSourceMode === 'browser'
+                      ? 'Acquiring browser video stream and establishing WebSocket inference channel. Live preview will appear momentarily.'
+                      : `Acquiring device /dev/video${selectedServerCameraIndex} on backend host and initializing YOLOv8 stream.`}
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="detection-empty-state">
@@ -626,13 +1252,15 @@ export const CameraDetectionScreen: React.FC = () => {
                   </svg>
                   <h4 className="empty-state-title">Live Camera Capture is Inactive</h4>
                   <p className="empty-state-desc">
-                    Select a camera device from the list on the left and click <strong>Start Camera Stream</strong>. Live frames will be captured via V4L2 and processed in real time by the pretrained YOLOv8 model.
+                    {cameraSourceMode === 'browser'
+                      ? 'Select your browser webcam above and click Start Browser Camera Stream. Frames will be captured locally in your browser and processed by the central YOLOv8 service.'
+                      : 'Select a server video device from the list and click Start Camera Stream to capture directly from host hardware.'}
                   </p>
                   <div className="empty-state-pills">
-                    <span className="empty-pill">✓ Built-in Webcams</span>
-                    <span className="empty-pill">✓ USB Webcams</span>
-                    <span className="empty-pill">✓ Iriun Virtual Webcam</span>
-                    <span className="empty-pill">✓ DroidCam & V4L2</span>
+                    <span className="empty-pill">✓ Any Compatible Device (Mac/Linux/Windows)</span>
+                    <span className="empty-pill">✓ Built-in & USB Webcams</span>
+                    <span className="empty-pill">✓ Iriun & DroidCam Compatible</span>
+                    <span className="empty-pill">✓ Zero Local Python / YOLO Required</span>
                   </div>
                 </div>
               </div>
@@ -731,54 +1359,56 @@ export const CameraDetectionScreen: React.FC = () => {
                   id="file-conf-slider"
                   type="range"
                   min="0.10"
-                  max="0.85"
+                  max="0.80"
                   step="0.05"
                   value={confThreshold}
                   onChange={(e) => setConfThreshold(parseFloat(e.target.value))}
                   className="param-slider"
                   disabled={isProcessing}
                 />
+                <span className="param-hint">Minimum detector confidence for human bounding box candidate</span>
               </div>
 
-              <div className="param-row" style={{ marginTop: 'var(--space-3)' }}>
+              <div className="param-row">
                 <div className="param-label-group">
-                  <label htmlFor="file-fps-slider" className="param-label">
+                  <label htmlFor="sample-fps-slider" className="param-label">
                     Sampling Rate:
                   </label>
                   <span className="param-value">{sampleFps.toFixed(1)} FPS</span>
                 </div>
                 <input
-                  id="file-fps-slider"
+                  id="sample-fps-slider"
                   type="range"
                   min="0.5"
-                  max="2.0"
+                  max="3.0"
                   step="0.5"
                   value={sampleFps}
                   onChange={(e) => setSampleFps(parseFloat(e.target.value))}
                   className="param-slider"
                   disabled={isProcessing}
                 />
+                <span className="param-hint">Frames sampled per second to balance CPU throughput &amp; responsiveness</span>
               </div>
             </div>
 
-            <div className="action-row">
+            <div className="action-button-group">
               <button
                 type="button"
-                className={`btn-run-inference ${isProcessing ? 'btn-run-inference-loading' : ''}`}
+                className="btn-run-inference"
                 onClick={handleRunFileInference}
-                disabled={isProcessing || (!selectedFile && !activeSampleId) || (!health?.model_ready && !healthLoading)}
+                disabled={isProcessing || !health?.model_ready || (!selectedFile && !activeSampleId)}
               >
                 {isProcessing ? (
                   <>
                     <span className="action-spinner" />
-                    <span>Processing Frames & Running YOLOv8n Inference...</span>
+                    <span>Processing Frames on CPU...</span>
                   </>
                 ) : (
                   <>
                     <svg className="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polygon points="5 3 19 12 5 21 5 3" />
                     </svg>
-                    <span>Run Model Inference on Video</span>
+                    <span>Run Person Detection Pipeline</span>
                   </>
                 )}
               </button>
@@ -786,89 +1416,31 @@ export const CameraDetectionScreen: React.FC = () => {
 
             {processingError && (
               <div className="processing-error-banner" role="alert">
+                <div className="error-icon-col">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="15" y1="9" x2="9" y2="15" />
+                    <line x1="9" y1="9" x2="15" y2="15" />
+                  </svg>
+                </div>
                 <div className="error-text-col">
-                  <strong>Analysis Error:</strong> {processingError}
+                  <strong>Inference Error:</strong> {processingError}
                 </div>
-                <button
-                  type="button"
-                  className="btn-retry-error"
-                  onClick={handleRunFileInference}
-                  disabled={isProcessing}
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-
-            {videoPreviewUrl && (
-              <div className="video-player-container">
-                <div className="video-player-header">
-                  <span className="video-player-title">Input Video Stream Preview</span>
-                  <span className="video-player-tag">HTML5 PLAYER</span>
-                </div>
-                <video
-                  src={videoPreviewUrl}
-                  controls
-                  className="video-element"
-                  preload="metadata"
-                />
               </div>
             )}
           </section>
 
-          {/* RIGHT: File Inference Results */}
-          <section className="detection-panel-card" aria-label="Inference Results & Evidence">
+          {/* RIGHT: Video File Results Display */}
+          <section className="detection-panel-card" aria-label="Video Output & Detection Results">
             <div className="panel-card-header">
-              <h3 className="panel-card-title">2. Inference Results & Evidence</h3>
-              {detectionResult && (
-                <span
-                  className={`panel-card-badge ${
-                    detectionResult.status === 'completed'
-                      ? 'badge-status-completed'
-                      : detectionResult.status === 'zero_detections'
-                      ? 'badge-status-zero'
-                      : 'badge-status-other'
-                  }`}
-                >
-                  {detectionResult.status.toUpperCase()}
-                </span>
-              )}
+              <h3 className="panel-card-title">2. Computer Vision Output &amp; Bounding Boxes</h3>
+              <span className={`panel-card-badge ${detectionResult ? 'badge-status-completed' : 'badge-status-other'}`}>
+                {detectionResult ? 'EVALUATION COMPLETE' : 'STANDBY'}
+              </span>
             </div>
 
-            {isProcessing && (
-              <div className="processing-loading-state">
-                <div className="loading-card">
-                  <div className="loading-orbit">
-                    <div className="orbit-spinner" />
-                  </div>
-                  <h4 className="loading-title">Executing Computer Vision Pipeline</h4>
-                  <p className="loading-desc">
-                    Decoding video via OpenCV, sampling frames, and executing real YOLOv8n inference on CPU.
-                  </p>
-                  <div className="loading-progress-bar">
-                    <div className="loading-progress-fill" />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!isProcessing && !detectionResult && (
-              <div className="detection-empty-state">
-                <div className="empty-state-card">
-                  <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M15 10l5 5-5 5" />
-                    <path d="M4 4v7a4 4 0 0 0 4 4h12" />
-                  </svg>
-                  <h4 className="empty-state-title">Awaiting Sample Video Submission</h4>
-                  <p className="empty-state-desc">
-                    Select a calibration sample or upload a video file on the left panel, then click <strong>Run Model Inference on Video</strong>.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {!isProcessing && detectionResult && (
-              <div className="detection-results-view">
+            {detectionResult ? (
+              <div className="results-container">
                 <div className="metrics-summary-row">
                   <div className="metric-box">
                     <span className="metric-box-label">PEAK PERSON COUNT</span>
@@ -879,39 +1451,23 @@ export const CameraDetectionScreen: React.FC = () => {
                   </div>
 
                   <div className="metric-box">
-                    <span className="metric-box-label">TOTAL DETECTIONS</span>
-                    <span className="metric-box-val">{detectionResult.total_person_detections}</span>
-                    <span className="metric-box-sub">across sampled frames</span>
-                  </div>
-
-                  <div className="metric-box">
-                    <span className="metric-box-label">FRAMES SAMPLED</span>
+                    <span className="metric-box-label">PROCESSED FRAMES</span>
                     <span className="metric-box-val">{detectionResult.total_frames_sampled}</span>
-                    <span className="metric-box-sub">{detectionResult.video_duration_sec}s duration</span>
+                    <span className="metric-box-sub">sampled at {sampleFps} FPS</span>
                   </div>
 
                   <div className="metric-box">
-                    <span className="metric-box-label">INFERENCE TIME</span>
-                    <span className="metric-box-val">{detectionResult.inference_duration_sec}s</span>
-                    <span className="metric-box-sub">on {detectionResult.device.toUpperCase()}</span>
+                    <span className="metric-box-label">TOTAL INFERENCE TIME</span>
+                    <span className="metric-box-val font-mono">{detectionResult.inference_duration_sec.toFixed(2)}s</span>
+                    <span className="metric-box-sub">~{(detectionResult.inference_duration_sec / Math.max(1, detectionResult.total_frames_sampled)).toFixed(2)}s/frame CPU</span>
                   </div>
-                </div>
 
-                <div
-                  className={`result-status-callout ${
-                    detectionResult.status === 'completed'
-                      ? 'status-callout-completed'
-                      : 'status-callout-zero'
-                  }`}
-                >
-                  <div className="callout-icon">
-                    {detectionResult.status === 'completed' ? '✓' : 'ℹ'}
-                  </div>
-                  <div className="callout-body">
-                    <strong>
-                      {detectionResult.status === 'completed' ? 'MODEL INFERENCE VERIFIED:' : 'ZERO DETECTIONS RESULT:'}
-                    </strong>{' '}
-                    {detectionResult.message}
+                  <div className="metric-box">
+                    <span className="metric-box-label">DETECTION STATUS</span>
+                    <span className="metric-box-val" style={{ fontSize: '13px', color: 'var(--status-positive)' }}>
+                      {detectionResult.max_person_count > 0 ? 'Persons Identified' : 'Zero Persons (Baseline)'}
+                    </span>
+                    <span className="metric-box-sub">COCO Class: Person (0)</span>
                   </div>
                 </div>
 
@@ -919,110 +1475,52 @@ export const CameraDetectionScreen: React.FC = () => {
                   <div className="annotated-preview-card">
                     <div className="annotated-preview-header">
                       <div>
-                        <span className="annotated-preview-title">Annotated Keyframe Inspection</span>
+                        <span className="annotated-preview-title">Annotated Key Frame</span>
                         <span className="annotated-preview-sub">
-                          Frame #{detectionResult.preview_frame_index ?? 0} • Peak Detection Snapshot
+                          Frame #{selectedFrame?.frame_index ?? detectionResult.preview_frame_index ?? 0} • Timestamp: {(selectedFrame?.timestamp_sec ?? 0).toFixed(2)}s • Persons: {selectedFrame?.person_count ?? detectionResult.max_person_count}
                         </span>
                       </div>
-                      <span className="provenance-chip">AUTHENTIC MODEL OUTPUT</span>
+                      <span className="provenance-chip">GENUINE PREDICTION</span>
                     </div>
 
                     <div className="preview-image-wrapper">
                       <img
                         src={detectionResult.preview_frame_base64}
-                        alt="Annotated detection preview frame from video"
+                        alt={`Annotated key frame ${detectionResult.preview_frame_index ?? 0}`}
                         className="preview-image"
                       />
                     </div>
-                  </div>
-                )}
 
-                {/* Frame-by-Frame Inspector */}
-                <div className="frame-inspector-card">
-                  <div className="frame-inspector-header">
-                    <span className="frame-inspector-title">Frame-by-Frame Inference Audit Log</span>
-                    <span className="frame-inspector-count">{detectionResult.frames.length} Sampled Frames</span>
-                  </div>
-
-                  <div className="table-responsive-container">
-                    <table className="detection-audit-table">
-                      <thead>
-                        <tr>
-                          <th>Frame #</th>
-                          <th>Timestamp</th>
-                          <th>Person Count</th>
-                          <th>Top Confidence</th>
-                          <th>Inspect</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detectionResult.frames.map((frame) => {
-                          const topConf = frame.bounding_boxes.length > 0
-                            ? Math.max(...frame.bounding_boxes.map((b) => b.confidence))
-                            : null;
-                          const isSelected = selectedFrame?.frame_index === frame.frame_index;
-
-                          return (
-                            <tr
-                              key={frame.frame_index}
-                              className={isSelected ? 'table-row-selected' : ''}
-                              onClick={() => setSelectedFrame(frame)}
-                            >
-                              <td className="font-mono">#{frame.frame_index}</td>
-                              <td className="font-mono">{frame.timestamp_sec.toFixed(2)}s</td>
-                              <td>
-                                <span className={`count-pill ${frame.person_count > 0 ? 'count-pill-active' : 'count-pill-zero'}`}>
-                                  {frame.person_count} {frame.person_count === 1 ? 'person' : 'persons'}
-                                </span>
-                              </td>
-                              <td className="font-mono">
-                                {topConf !== null ? `${(topConf * 100).toFixed(1)}%` : '—'}
-                              </td>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="btn-table-inspect"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedFrame(frame);
-                                  }}
-                                >
-                                  {isSelected ? 'Viewing' : 'Inspect'}
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {selectedFrame && (
-                    <div className="selected-frame-detail">
-                      <div className="selected-frame-title">
-                        <span>Selected Frame #{selectedFrame.frame_index} ({selectedFrame.timestamp_sec.toFixed(2)}s)</span>
-                        <span className="detail-tag">{selectedFrame.bounding_boxes.length} Detections</span>
-                      </div>
-
-                      {selectedFrame.bounding_boxes.length === 0 ? (
-                        <p className="no-boxes-text">No person bounding boxes were detected in this frame.</p>
-                      ) : (
-                        <div className="boxes-grid">
-                          {selectedFrame.bounding_boxes.map((box, idx) => (
-                            <div key={idx} className="box-detail-chip">
-                              <div className="box-chip-header">
-                                <span className="box-chip-id">Person #{idx + 1}</span>
-                                <span className="box-chip-conf">{(box.confidence * 100).toFixed(1)}% Conf</span>
-                              </div>
-                              <div className="box-chip-coords">
-                                <span>Pixels: [{box.box_pixels.join(', ')}]</span>
-                              </div>
-                            </div>
+                    {selectedFrame.bounding_boxes.length > 0 && (
+                      <div className="live-boxes-list">
+                        <span className="live-boxes-title">
+                          Verified Bounding Boxes ({selectedFrame.bounding_boxes.length}):
+                        </span>
+                        <div className="live-boxes-chips">
+                          {selectedFrame.bounding_boxes.map((b, idx) => (
+                            <span key={idx} className="live-box-pill">
+                              Person #{idx + 1}: {(b.confidence * 100).toFixed(0)}% conf • Box: [{b.box_pixels.join(', ')}]
+                            </span>
                           ))}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="detection-empty-state">
+                <div className="empty-state-card">
+                  <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                    <line x1="7" y1="2" x2="7" y2="22" />
+                    <line x1="17" y1="2" x2="17" y2="22" />
+                    <line x1="2" y1="12" x2="22" y2="12" />
+                  </svg>
+                  <h4 className="empty-state-title">No Video Analysis Executed Yet</h4>
+                  <p className="empty-state-desc">
+                    Choose one of the sample scenes on the left or upload an MP4 clip and click <strong>Run Person Detection Pipeline</strong> to evaluate the model.
+                  </p>
                 </div>
               </div>
             )}
