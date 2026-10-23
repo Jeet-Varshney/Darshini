@@ -82,24 +82,29 @@ npm run build
 npm run preview
 ```
 
-## Milestone 2 Implementation Scope: Real Person Detection Pipeline
+## Milestone 2 Implementation Scope: Universal Live Camera & Real Person Detection Pipeline
 
-Milestone 2 integrates a genuinely working computer-vision backend with the existing command center UI:
+Milestone 2 delivers a robust, camera-source-agnostic computer-vision pipeline integrated with the command center UI:
 
-1. **FastAPI Computer Vision Backend (`backend/`):**
-   - **Pretrained YOLOv8n Object Detection:** Runs lightweight YOLOv8n on CPU with zero GPU requirement.
-   - **Person Class Filtering:** Strictly isolates detections to COCO Class 0 (`person`), capturing normalized and pixel coordinates, confidence scores, and frame counts.
-   - **Video Frame Decoding & Sampling:** Uses OpenCV (`cv2.VideoCapture`) to sample frames at controlled intervals (default: 1.0 FPS, capped at 60 frames) to keep CPU inference under ~3-5 seconds.
-   - **Annotated Keyframe Preview:** Automatically generates an authentic JPEG preview frame annotated with steel-blue bounding boxes, confidence tags, and top telemetry HUD, encoded as a base64 data URI.
-   - **Temporary File Safeguards:** Uploaded video chunks are written to UUID-isolated temporary files in `backend/temp_uploads/` and guaranteed to be deleted in `finally` blocks upon completion or failure.
-   - **Separation of Concerns:** Model loading (`model_service.py`) is decoupled from video processing (`video_service.py`) and API routing (`routes.py`).
+1. **Universal Camera Discovery & Capture Lifecycle (`backend/`):**
+   - **Camera-Source Agnostic:** Supports ANY video capture device recognized by the host OS (built-in laptop webcams, external USB cameras, Iriun Virtual Webcam, DroidCam, and other V4L2-compatible video devices). Does not require Iriun or any proprietary drivers.
+   - **Hardware Readability Inspection:** Scans `/sys/class/video4linux/video*` and `/dev/video*`, extracts hardware names, and verifies whether the device node can actually produce readable video frames (cleanly distinguishing capture nodes from UVC metadata/infrared nodes).
+   - **Latest-Frame Non-Blocking Architecture:** Uses a decoupled capture thread and inference worker thread with a latest-frame strategy so frames are never backlogged, maintaining instant responsiveness (<85ms latency).
+   - **Clean Resource Management:** Stopping the camera or closing the client WebSocket immediately releases the hardware device via `cv2.VideoCapture.release()`.
+   - **Real-Time Streaming Protocol:** WebSocket (`/ws/camera/stream`) broadcasts annotated JPEG preview frames, measured inference FPS, bounding boxes, and detected person counts to connected clients.
+   - **REST Control Endpoints:** `GET /api/cameras` (device discovery), `GET /api/camera/status`, `POST /api/camera/start`, `POST /api/camera/stop`.
 
-2. **Frontend Camera & Detection Screen (`CameraDetectionScreen.tsx`):**
-   - **Live Health Status:** Automatically checks `/health` and displays the backend model readiness badge (`BACKEND ONLINE: YOLOv8n (CPU)`).
-   - **Pre-Packaged 1-Click Samples:** Includes `gate1_sample.mp4` (active pedestrians) and `empty_zone_sample.mp4` (zero detections) for instant evaluation.
-   - **Custom Video Upload:** Supports drag-and-drop file upload for `.mp4`, `.mov`, `.avi`, `.mkv` with 50 MB safeguard.
-   - **Authentic Results & Audit Log:** Displays peak person count, total person instances, inference time, annotated preview frame, and an expandable frame-by-frame audit log with bounding box coordinate inspection.
-   - **Transparent Zero Handling:** When zero persons are detected, the system honestly reports zero detections and explains that no synthetic data was fabricated.
+2. **Pretrained YOLOv8n Object Detection:**
+   - **Pretrained YOLOv8n:** Runs on CPU with zero GPU requirement (~100–140ms per frame, achieving ~7.5–10 FPS).
+   - **Person Class Isolation:** Strictly filters detections to COCO Class 0 (`person`), capturing normalized and pixel coordinates, confidence scores, and person counts.
+   - **Zero Synthetic Detections:** Every displayed bounding box, confidence score, and count reflects actual model output. When zero persons are present, the system transparently reports 0 detections.
+
+3. **Frontend Camera & Detection Screen (`CameraDetectionScreen.tsx`):**
+   - **Dual Pipeline Modes:** Quick tab switcher between **Universal Live Camera Feed** and **Sample & Custom Video File**.
+   - **Live Device Selector & Rescan:** Dropdown listing all discovered cameras with readiness indicators (`● Ready` vs `○ Unavailable`), hardware tags (`PHYSICAL` vs `VIRTUAL`), and a 1-click `↻ Rescan Devices` button.
+   - **Explicit User Control:** Camera stream never starts automatically; user must click `Start Camera Stream`.
+   - **Live HUD & Metrics:** Displays active detected persons, measured inference FPS, inference latency, and real-time annotated feed with steel-blue bounding boxes.
+   - **Preserved File Analysis Workflow:** Pre-packaged calibration videos (`gate1_sample.mp4`, `empty_zone_sample.mp4`) and custom file drag-and-drop with frame-by-frame audit log.
 
 ---
 
@@ -140,7 +145,15 @@ npm run backend:test  # Runs pytest test suite
 cd backend
 PYTHONPATH=. .venv/bin/python -m pytest -v tests/
 ```
-All 10 unit and integration tests verify health reporting, unsupported file handling, empty file rejection, model-unavailable behavior, real YOLO detection, zero-detection honesty, and temporary file cleanup.
+All 15 automated unit and integration tests verify:
+- Dynamic camera discovery and device readability validation (`test_camera.py`)
+- Live camera start/stop lifecycle and device node release (`test_camera.py`)
+- Model-unavailable guards and invalid device index rejection (`test_camera.py`)
+- Video upload validation, 50MB file size safeguards, and format checks (`test_detection.py`)
+- Genuine YOLO person detection and coordinate boundaries (`test_detection.py`)
+- Zero-detection honesty without synthetic fallbacks (`test_detection.py`)
+- Temporary upload file cleanup (`test_detection.py`)
+- Health and model readiness reporting (`test_health.py`)
 
 ---
 

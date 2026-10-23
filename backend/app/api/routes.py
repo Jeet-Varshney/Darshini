@@ -1,8 +1,5 @@
-"""
-CrowdFlow Sentinel - API Endpoints
-Implements health checks, model status inspection, and sample-video person detection.
-"""
-
+import asyncio
+import json
 import logging
 import os
 import shutil
@@ -10,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, status
 
 from app.config import (
     ALLOWED_EXTENSIONS,
@@ -25,9 +22,15 @@ from app.schemas import (
     HealthResponse,
     ModelStatusResponse,
     DetectionResponse,
+    CameraDeviceInfo,
+    CameraListResponse,
+    CameraStartRequest,
+    CameraStatusResponse,
 )
 from app.services.model_service import model_service, ModelUnavailableError
 from app.services.video_service import VideoProcessor, VideoProcessingError
+from app.services.camera_discovery import camera_discovery_service
+from app.services.camera_stream import live_camera_manager
 
 logger = logging.getLogger("crowdflow.routes")
 router = APIRouter()
@@ -204,3 +207,159 @@ async def detect_video(
                 logger.debug("Cleaned up temporary upload file: %s", temp_file_path)
             except OSError as err:
                 logger.error("Failed to delete temp file %s: %s", temp_file_path, err)
+
+
+# ============================================================================
+# Universal Live Camera Endpoints
+# ============================================================================
+
+@router.get(
+    "/api/cameras",
+    response_model=CameraListResponse,
+    summary="Discover available video devices",
+    description="Discovers all video devices on the host (built-in, USB, virtual) and reports frame readability.",
+)
+async def list_available_cameras(refresh: bool = False):
+    """Discovers available video devices on the host system."""
+    devices = camera_discovery_service.discover_cameras(test_read=True)
+    device_objects = [CameraDeviceInfo(**d) for d in devices]
+    readable_count = sum(1 for d in device_objects if d.is_readable)
+
+    return CameraListResponse(
+        cameras=device_objects,
+        count=len(device_objects),
+        readable_count=readable_count,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@router.get(
+    "/api/camera/status",
+    response_model=CameraStatusResponse,
+    summary="Get active live camera status",
+    description="Returns whether live capture is active, current camera name, subscribers, and measured FPS.",
+)
+async def get_camera_status():
+    """Returns the current state of live camera streaming and inference."""
+    status_data = live_camera_manager.get_status()
+    return CameraStatusResponse(
+        is_streaming=status_data["is_streaming"],
+        active_device_index=status_data["active_device_index"],
+        active_camera_name=status_data["active_camera_name"],
+        model_ready=status_data["model_ready"],
+        inference_fps=status_data["inference_fps"],
+        last_person_count=status_data["last_person_count"],
+        active_subscribers=status_data["active_subscribers"],
+        error_message=status_data["error_message"],
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@router.post(
+    "/api/camera/start",
+    response_model=CameraStatusResponse,
+    summary="Start live camera capture",
+    description="Activates live video capture on the specified device index and initiates background model inference.",
+)
+async def start_camera(request: CameraStartRequest):
+    """Starts live capture on a chosen camera index."""
+    if not model_service.is_ready:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=model_service.error_message or "Inference model is not ready.",
+        )
+
+    success = live_camera_manager.start(
+        device_index=request.device_index,
+        conf_threshold=request.conf_threshold,
+    )
+    if not success:
+        err = live_camera_manager.error_message or f"Could not open device /dev/video{request.device_index}"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
+
+    return await get_camera_status()
+
+
+@router.post(
+    "/api/camera/stop",
+    response_model=CameraStatusResponse,
+    summary="Stop live camera capture",
+    description="Stops live video capture, terminates background inference threads, and releases the hardware device.",
+)
+async def stop_camera():
+    """Stops live capture and releases hardware device."""
+    live_camera_manager.stop()
+    return await get_camera_status()
+
+
+@router.websocket("/ws/camera/stream")
+async def websocket_camera_stream(websocket: WebSocket):
+    """
+    WebSocket endpoint delivering live annotated video frames and genuine detection metadata.
+    Supports client commands:
+      - {"action": "start", "device_index": 0, "conf_threshold": 0.25}
+      - {"action": "stop"}
+      - {"action": "ping"}
+    """
+    await websocket.accept()
+    queue = asyncio.Queue(maxsize=2)
+    live_camera_manager.register_subscriber(queue)
+    logger.info("WebSocket subscriber connected (total: %d)", live_camera_manager.subscriber_count)
+
+    # Initial status packet
+    status_packet = {
+        "type": "status",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **live_camera_manager.get_status(),
+    }
+    await websocket.send_text(json.dumps(status_packet))
+
+    # Helper task to listen for client commands concurrently
+    async def listen_for_client_commands():
+        try:
+            while True:
+                text = await websocket.receive_text()
+                try:
+                    cmd = json.loads(text)
+                    action = cmd.get("action")
+                    if action == "start":
+                        dev_idx = cmd.get("device_index", 0)
+                        conf = cmd.get("conf_threshold", DEFAULT_CONF_THRESHOLD)
+                        live_camera_manager.start(dev_idx, conf)
+                        ack = {
+                            "type": "status",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            **live_camera_manager.get_status(),
+                        }
+                        await websocket.send_text(json.dumps(ack))
+                    elif action == "stop":
+                        live_camera_manager.stop()
+                        ack = {
+                            "type": "status",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            **live_camera_manager.get_status(),
+                        }
+                        await websocket.send_text(json.dumps(ack))
+                    elif action == "ping":
+                        await websocket.send_text(json.dumps({"type": "pong", "timestamp": time.time()}))
+                except json.JSONDecodeError:
+                    pass
+        except (WebSocketDisconnect, asyncio.CancelledError):
+            pass
+
+    listener_task = asyncio.create_task(listen_for_client_commands())
+
+    try:
+        while True:
+            # Wait for next frame packet from camera stream worker
+            packet = await queue.get()
+            await websocket.send_text(json.dumps(packet))
+    except (WebSocketDisconnect, ConnectionResetError):
+        logger.info("WebSocket subscriber disconnected.")
+    except Exception as e:
+        logger.warning("Error in WebSocket streaming loop: %s", e)
+    finally:
+        listener_task.cancel()
+        live_camera_manager.unregister_subscriber(queue)
+        logger.info("WebSocket subscriber unregistered (remaining: %d)", live_camera_manager.subscriber_count)
+

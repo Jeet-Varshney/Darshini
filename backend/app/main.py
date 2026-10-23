@@ -29,7 +29,12 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Model initialization deferred or weights unavailable: %s", model_service.error_message)
     yield
-    logger.info("Shutting down CrowdFlow Sentinel Backend API.")
+    logger.info("Shutting down CrowdFlow Sentinel Backend API and releasing camera devices...")
+    try:
+        from app.services.camera_stream import live_camera_manager
+        live_camera_manager.stop()
+    except Exception as e:
+        logger.debug("Error releasing camera on shutdown: %s", e)
 
 
 app = FastAPI(

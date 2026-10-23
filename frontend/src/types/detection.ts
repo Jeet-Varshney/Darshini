@@ -45,3 +45,48 @@ export interface BackendHealthStatus {
   weights_present: boolean;
   message: string;
 }
+
+export interface CameraDevice {
+  id: string;
+  index: number;
+  name: string;
+  raw_name: string;
+  device_path: string;
+  device_type: 'PHYSICAL' | 'VIRTUAL' | 'UNKNOWN';
+  is_readable: boolean;
+  resolution: string;
+  error_reason: string | null;
+}
+
+export interface CameraListResponse {
+  cameras: CameraDevice[];
+  count: number;
+  readable_count: number;
+  timestamp: string;
+}
+
+export interface CameraStatusResponse {
+  is_streaming: boolean;
+  active_device_index: number | null;
+  active_camera_name: string | null;
+  model_ready: boolean;
+  inference_fps: number;
+  last_person_count: number;
+  active_subscribers: number;
+  error_message: string | null;
+  timestamp: string;
+}
+
+export interface LiveStreamPacket {
+  type: 'frame' | 'status' | 'error';
+  timestamp: string;
+  camera_name?: string;
+  device_index?: number;
+  person_count?: number;
+  bounding_boxes?: BoundingBox[];
+  inference_fps?: number;
+  inference_duration_ms?: number;
+  image?: string;
+  status?: string;
+  message?: string;
+}

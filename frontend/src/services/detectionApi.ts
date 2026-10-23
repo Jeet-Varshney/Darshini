@@ -1,6 +1,13 @@
-import type { BackendHealthStatus, DetectionResponse } from '../types/detection';
+import type {
+  BackendHealthStatus,
+  DetectionResponse,
+  CameraListResponse,
+  CameraStatusResponse,
+  LiveStreamPacket,
+} from '../types/detection';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 export async function checkBackendHealth(): Promise<BackendHealthStatus> {
   const controller = new AbortController();
@@ -25,6 +32,79 @@ export async function checkBackendHealth(): Promise<BackendHealthStatus> {
     }
     throw new Error(err.message || 'Cannot reach FastAPI backend server');
   }
+}
+
+export async function fetchAvailableCameras(): Promise<CameraListResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/cameras`);
+  if (!res.ok) {
+    throw new Error(`Failed to discover cameras (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchCameraStatus(): Promise<CameraStatusResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/camera/status`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch camera status (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+
+export async function startLiveCamera(
+  deviceIndex: number,
+  confThreshold: number = 0.25
+): Promise<CameraStatusResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/camera/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      device_index: deviceIndex,
+      conf_threshold: confThreshold,
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.detail || `Failed to start camera on device index ${deviceIndex}`);
+  }
+  return data;
+}
+
+export async function stopLiveCamera(): Promise<CameraStatusResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/camera/stop`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to stop camera (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+
+export function createCameraWebSocket(
+  onPacket: (pkt: LiveStreamPacket) => void,
+  onError?: (err: Event) => void,
+  onClose?: () => void
+): WebSocket {
+  const ws = new WebSocket(`${WS_BASE_URL}/ws/camera/stream`);
+
+  ws.onmessage = (event) => {
+    try {
+      const packet: LiveStreamPacket = JSON.parse(event.data);
+      onPacket(packet);
+    } catch (e) {
+      console.warn('Failed to parse WebSocket packet:', e);
+    }
+  };
+
+  if (onError) {
+    ws.onerror = onError;
+  }
+
+  if (onClose) {
+    ws.onclose = onClose;
+  }
+
+  return ws;
 }
 
 export async function runVideoDetection(

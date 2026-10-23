@@ -74,3 +74,40 @@ class ModelStatusResponse(HealthResponse):
     max_upload_size_mb: float = Field(..., description="Configured upload limit in MB")
     max_frames_to_process: int = Field(..., description="Configured max frames per video")
     default_sample_fps: float = Field(..., description="Default frame sampling rate")
+
+
+class CameraDeviceInfo(BaseModel):
+    id: str = Field(..., description="Identifier (e.g. '0')")
+    index: int = Field(..., description="V4L2 device index (e.g. 0)")
+    name: str = Field(..., description="Friendly device name (e.g. 'HP True Vision HD Camera (Built-in Webcam)')")
+    raw_name: str = Field(..., description="Driver device name from sysfs")
+    device_path: str = Field(..., description="Filesystem device node path (e.g. '/dev/video0')")
+    device_type: str = Field("PHYSICAL", description="'PHYSICAL' for USB/built-in, 'VIRTUAL' for Iriun/DroidCam")
+    is_readable: bool = Field(..., description="Whether device can produce valid video frames")
+    resolution: str = Field(..., description="Native frame resolution or 'N/A'")
+    error_reason: Optional[str] = Field(None, description="Detailed reason if device cannot be opened")
+
+
+class CameraListResponse(BaseModel):
+    cameras: List[CameraDeviceInfo] = Field(default_factory=list, description="List of discovered camera devices")
+    count: int = Field(..., description="Total devices found")
+    readable_count: int = Field(..., description="Number of devices confirmed readable")
+    timestamp: str = Field(..., description="Discovery timestamp")
+
+
+class CameraStartRequest(BaseModel):
+    device_index: int = Field(0, description="V4L2 index of camera device to activate")
+    conf_threshold: float = Field(0.25, ge=0.05, le=0.95, description="Model confidence threshold for person class")
+
+
+class CameraStatusResponse(BaseModel):
+    is_streaming: bool = Field(..., description="Whether live camera capture and inference is active")
+    active_device_index: Optional[int] = Field(None, description="Active camera index")
+    active_camera_name: Optional[str] = Field(None, description="Active camera name")
+    model_ready: bool = Field(..., description="Whether model is loaded and ready")
+    inference_fps: float = Field(0.0, description="Measured real inference FPS on CPU")
+    last_person_count: int = Field(0, description="Number of persons detected in latest frame")
+    active_subscribers: int = Field(0, description="Number of connected WebSocket viewers")
+    error_message: Optional[str] = Field(None, description="Last runtime capture error")
+    timestamp: str = Field(..., description="Current status timestamp")
+

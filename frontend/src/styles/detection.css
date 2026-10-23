@@ -82,6 +82,269 @@
   color: var(--text-secondary);
 }
 
+/* Pipeline Mode Tabs (Live Camera vs Sample Video) */
+.detection-mode-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 2px solid var(--border-subtle);
+  padding-bottom: var(--space-1);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mode-tab-btn {
+  background: none;
+  border: none;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -6px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  transition: all 0.15s ease-in-out;
+  white-space: nowrap;
+}
+
+.mode-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.mode-tab-btn-active {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+.mode-tab-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.tab-live-pulse {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  background-color: var(--status-critical);
+  color: #FFFFFF;
+  padding: 1px 5px;
+  border-radius: var(--radius-badge);
+  animation: pulse-live 1.2s infinite;
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Live Camera Picker & Specs */
+.camera-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.picker-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.btn-refresh-cameras {
+  background-color: var(--surface-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-badge);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--accent-primary);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.btn-refresh-cameras:hover:not(:disabled) {
+  background-color: var(--surface-tertiary);
+}
+
+.camera-dropdown-select {
+  width: 100%;
+  height: 38px;
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.camera-dropdown-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+.device-scan-empty,
+.device-scan-error {
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+  background-color: var(--surface-secondary);
+  color: var(--text-secondary);
+}
+
+.device-scan-error {
+  background-color: var(--status-critical-bg);
+  color: var(--status-critical);
+  border: 1px solid var(--status-critical-border);
+}
+
+.camera-spec-card {
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.spec-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.spec-label {
+  color: var(--text-muted);
+}
+
+.spec-value {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.spec-ready {
+  color: var(--status-positive);
+}
+
+.spec-unreadable {
+  color: var(--status-critical);
+}
+
+.type-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: var(--radius-badge);
+  font-weight: 700;
+}
+
+.type-tag-physical {
+  background-color: var(--surface-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.type-tag-virtual {
+  background-color: var(--status-info-bg);
+  color: var(--status-info);
+  border: 1px solid var(--status-info-border);
+}
+
+/* Camera Action Buttons (Start / Stop) */
+.camera-action-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.btn-start-camera {
+  width: 100%;
+  height: 44px;
+  background-color: var(--accent-primary);
+  color: #FFFFFF;
+  border: none;
+  border-radius: var(--radius-control);
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.15s ease-in-out;
+}
+
+.btn-start-camera:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+
+.btn-start-camera:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-stop-camera {
+  width: 100%;
+  height: 44px;
+  background-color: var(--status-critical);
+  color: #FFFFFF;
+  border: none;
+  border-radius: var(--radius-control);
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  box-shadow: var(--shadow-sm);
+  transition: opacity 0.15s ease-in-out;
+}
+
+.btn-stop-camera:hover {
+  opacity: 0.9;
+}
+
+/* Live Detected Box Inspector */
+.live-boxes-list {
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--surface-subtle);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.live-boxes-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.live-boxes-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.live-box-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background-color: var(--surface-primary);
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+  padding: 2px 6px;
+  border-radius: var(--radius-badge);
+}
+
 /* Health Badge in Header */
 .detection-header-right {
   display: flex;
