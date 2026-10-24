@@ -26,6 +26,8 @@ DETECTION_HISTORY_MIN_INTERVAL_SEC = float(os.getenv("DETECTION_HISTORY_MIN_INTE
 # Model configuration
 DEFAULT_WEIGHTS_FILE = WEIGHTS_DIR / "yolov8n.pt"
 MODEL_PATH = Path(os.getenv("MODEL_PATH", str(DEFAULT_WEIGHTS_FILE)))
+if not MODEL_PATH.exists() and (BACKEND_DIR / MODEL_PATH).exists():
+    MODEL_PATH = BACKEND_DIR / MODEL_PATH
 MODEL_NAME = "YOLOv8n (Pretrained COCO Nano)"
 PERSON_CLASS_ID = 0  # Class 0 in COCO 80-class taxonomy is "person"
 

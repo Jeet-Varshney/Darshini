@@ -50,6 +50,7 @@ htmlcov/
 
 # Model weights & Checkpoints
 *.pt
+!backend/weights/yolov8n.pt
 *.pth
 *.onnx
 *.bin
@@ -60,7 +61,8 @@ models/checkpoints/
 # Large media & dumps
 large_media/
 backend/temp_uploads/
-backend/weights/
+backend/weights/*
+!backend/weights/yolov8n.pt
 *.avi
 *.mov
 *.mkv
