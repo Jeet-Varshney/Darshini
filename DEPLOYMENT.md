@@ -124,18 +124,30 @@ server {
 
 ### Option B: Cloud Hosting (Render / Railway / Fly.io / DigitalOcean)
 
-#### 1. Backend Service
-- **Service Type:** Web Service (Persistent Docker)
+#### 1. Backend Service (Render Web Service)
+
+**Method 1: Native Python Environment (Recommended for Fast Deploys)**
+- **Environment:** `Python 3` (Python 3.11 recommended)
 - **Root Directory:** `backend`
-- **Build Command:** Built via `backend/Dockerfile`
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **Health Check Path:** `/health`
 - **Environment Variables:**
   ```env
   MODEL_PATH=weights/yolov8n.pt
   HOST=0.0.0.0
-  PORT=8000
-  CORS_ORIGINS=https://darshini-frontend.example.com
+  CORS_ORIGINS=https://your-frontend.onrender.com
+  JWT_SECRET_KEY=your-secure-random-32-byte-hex-secret
   ```
+
+*Note: If Root Directory is left at repo root (`/`), use Build Command: `pip install -r backend/requirements.txt` and Start Command: `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.*
+
+**Method 2: Docker Environment**
+- **Environment:** `Docker`
+- **Root Directory:** `backend`
+- **Dockerfile Path:** `Dockerfile`
 - **Health Check Path:** `/health`
+- Automatically binds to `${PORT:-8000}` assigned by Render.
 
 #### 2. Frontend Static Site
 - **Service Type:** Static Web App (Vercel, Netlify, Cloudflare Pages, or Render Static)
