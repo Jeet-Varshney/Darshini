@@ -129,6 +129,7 @@ class VideoProcessor:
                         BoundingBox(
                             box_pixels=det["box_pixels"],
                             box_normalized=det["box_normalized"],
+                            ground_contact_normalized=det.get("ground_contact_normalized"),
                             confidence=det["confidence"],
                             class_id=det["class_id"],
                             class_name=det["class_name"],

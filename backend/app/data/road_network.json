@@ -1,0 +1,258 @@
+{
+  "venue_id": "venue-darshini-park",
+  "venue_name": "Darshini Exhibition & Arena Precinct",
+  "disclaimer": "SIMULATED TOPOLOGY: Represents configured demonstration fixture for what-if simulation.",
+  "nodes": [
+    {
+      "id": "node_gate_a",
+      "name": "North Entry Gate A",
+      "type": "GATE",
+      "coordinates": [28.6171, 77.2100],
+      "svg_pos": [440, 35],
+      "base_inflow_pph": 3200,
+      "capacity_pax": 4800
+    },
+    {
+      "id": "node_north_plaza",
+      "name": "North Gate Arrival Plaza",
+      "type": "PLAZA",
+      "coordinates": [28.6163, 77.2100],
+      "svg_pos": [440, 95],
+      "base_inflow_pph": 0,
+      "capacity_pax": 2400
+    },
+    {
+      "id": "node_central_promenade",
+      "name": "Central Promenade Concourse",
+      "type": "INTERSECTION",
+      "coordinates": [28.6144, 77.2100],
+      "svg_pos": [440, 245],
+      "base_inflow_pph": 0,
+      "capacity_pax": 3750
+    },
+    {
+      "id": "node_pavilion_east",
+      "name": "Pavilion Hall A (East)",
+      "type": "ASSEMBLY",
+      "coordinates": [28.6144, 77.2125],
+      "svg_pos": [715, 245],
+      "base_inflow_pph": 0,
+      "capacity_pax": 4800
+    },
+    {
+      "id": "node_gate_b",
+      "name": "East Pavilion Access Gate B",
+      "type": "GATE",
+      "coordinates": [28.6144, 77.2136],
+      "svg_pos": [835, 245],
+      "base_inflow_pph": 1100,
+      "capacity_pax": 2200
+    },
+    {
+      "id": "node_west_corridor",
+      "name": "West Emergency Corridor",
+      "type": "CORRIDOR",
+      "coordinates": [28.6144, 77.2075],
+      "svg_pos": [165, 245],
+      "base_inflow_pph": 0,
+      "capacity_pax": 1350
+    },
+    {
+      "id": "node_gate_d",
+      "name": "West Emergency Gate D",
+      "type": "GATE",
+      "coordinates": [28.6144, 77.2064],
+      "svg_pos": [45, 245],
+      "base_inflow_pph": 500,
+      "capacity_pax": 1500
+    },
+    {
+      "id": "node_south_terminal",
+      "name": "South Metro Hub Plaza",
+      "type": "TRANSIT_HUB",
+      "coordinates": [28.6125, 77.2100],
+      "svg_pos": [440, 405],
+      "base_inflow_pph": 0,
+      "capacity_pax": 2700
+    },
+    {
+      "id": "node_gate_c",
+      "name": "South Metro Gate C",
+      "type": "GATE",
+      "coordinates": [28.6117, 77.2100],
+      "svg_pos": [440, 465],
+      "base_inflow_pph": 2400,
+      "capacity_pax": 5500
+    },
+    {
+      "id": "node_perimeter_ne",
+      "name": "North-East Perimeter Junction",
+      "type": "JUNCTION",
+      "coordinates": [28.6175, 77.2140],
+      "svg_pos": [840, 20],
+      "base_inflow_pph": 0,
+      "capacity_pax": 1000
+    },
+    {
+      "id": "node_perimeter_se",
+      "name": "South-East Perimeter Junction",
+      "type": "JUNCTION",
+      "coordinates": [28.6115, 77.2140],
+      "svg_pos": [840, 480],
+      "base_inflow_pph": 0,
+      "capacity_pax": 1000
+    },
+    {
+      "id": "node_perimeter_sw",
+      "name": "South-West Perimeter Junction",
+      "type": "JUNCTION",
+      "coordinates": [28.6115, 77.2060],
+      "svg_pos": [40, 480],
+      "base_inflow_pph": 0,
+      "capacity_pax": 1000
+    },
+    {
+      "id": "node_perimeter_nw",
+      "name": "North-West Perimeter Junction",
+      "type": "JUNCTION",
+      "coordinates": [28.6175, 77.2060],
+      "svg_pos": [40, 20],
+      "base_inflow_pph": 0,
+      "capacity_pax": 1000
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_gate_a_plaza",
+      "name": "Gate A Inflow Turnstiles",
+      "source": "node_gate_a",
+      "target": "node_north_plaza",
+      "type": "GATE_ACCESS",
+      "length_meters": 70,
+      "capacity_limit_pph": 4800,
+      "base_flow_pph": 3200,
+      "svg_coords": [440, 35, 440, 95]
+    },
+    {
+      "id": "edge_north_spine",
+      "name": "North Spine Concourse Walkway",
+      "source": "node_north_plaza",
+      "target": "node_central_promenade",
+      "type": "WALKWAY",
+      "length_meters": 180,
+      "capacity_limit_pph": 3600,
+      "base_flow_pph": 2500,
+      "svg_coords": [440, 95, 440, 245]
+    },
+    {
+      "id": "edge_concourse_east",
+      "name": "East Arena Connector Corridor",
+      "source": "node_central_promenade",
+      "target": "node_pavilion_east",
+      "type": "CORRIDOR",
+      "length_meters": 210,
+      "capacity_limit_pph": 3000,
+      "base_flow_pph": 1600,
+      "svg_coords": [440, 245, 715, 245]
+    },
+    {
+      "id": "edge_pavilion_gate_b",
+      "name": "Pavilion East Egress Corridor",
+      "source": "node_pavilion_east",
+      "target": "node_gate_b",
+      "type": "GATE_ACCESS",
+      "length_meters": 80,
+      "capacity_limit_pph": 2200,
+      "base_flow_pph": 1100,
+      "svg_coords": [715, 245, 835, 245]
+    },
+    {
+      "id": "edge_concourse_west",
+      "name": "West Transit Connector",
+      "source": "node_central_promenade",
+      "target": "node_west_corridor",
+      "type": "CORRIDOR",
+      "length_meters": 220,
+      "capacity_limit_pph": 2000,
+      "base_flow_pph": 800,
+      "svg_coords": [440, 245, 165, 245]
+    },
+    {
+      "id": "edge_west_gate_d",
+      "name": "West Emergency Clearance Egress",
+      "source": "node_west_corridor",
+      "target": "node_gate_d",
+      "type": "GATE_ACCESS",
+      "length_meters": 90,
+      "capacity_limit_pph": 1500,
+      "base_flow_pph": 500,
+      "svg_coords": [165, 245, 45, 245]
+    },
+    {
+      "id": "edge_south_spine",
+      "name": "South Spine Walkway Link",
+      "source": "node_central_promenade",
+      "target": "node_south_terminal",
+      "type": "WALKWAY",
+      "length_meters": 190,
+      "capacity_limit_pph": 3400,
+      "base_flow_pph": 2100,
+      "svg_coords": [440, 245, 440, 405]
+    },
+    {
+      "id": "edge_terminal_gate_c",
+      "name": "Metro Terminal Egress Concourse",
+      "source": "node_south_terminal",
+      "target": "node_gate_c",
+      "type": "GATE_ACCESS",
+      "length_meters": 75,
+      "capacity_limit_pph": 5500,
+      "base_flow_pph": 2400,
+      "svg_coords": [440, 405, 440, 465]
+    },
+    {
+      "id": "edge_north_ring",
+      "name": "North Perimeter Boulevard",
+      "source": "node_perimeter_nw",
+      "target": "node_perimeter_ne",
+      "type": "ROAD",
+      "length_meters": 620,
+      "capacity_limit_pph": 2400,
+      "base_flow_pph": 900,
+      "svg_coords": [40, 20, 840, 20]
+    },
+    {
+      "id": "edge_east_arterial",
+      "name": "East Exhibition Link",
+      "source": "node_perimeter_ne",
+      "target": "node_perimeter_se",
+      "type": "ROAD",
+      "length_meters": 550,
+      "capacity_limit_pph": 2200,
+      "base_flow_pph": 1400,
+      "svg_coords": [840, 20, 840, 480]
+    },
+    {
+      "id": "edge_south_ring",
+      "name": "South Terminal Way",
+      "source": "node_perimeter_se",
+      "target": "node_perimeter_sw",
+      "type": "ROAD",
+      "length_meters": 620,
+      "capacity_limit_pph": 2600,
+      "base_flow_pph": 1100,
+      "svg_coords": [840, 480, 40, 480]
+    },
+    {
+      "id": "edge_west_emergency",
+      "name": "West Service & Egress Lane",
+      "source": "node_perimeter_sw",
+      "target": "node_perimeter_nw",
+      "type": "ROAD",
+      "length_meters": 550,
+      "capacity_limit_pph": 1800,
+      "base_flow_pph": 400,
+      "svg_coords": [40, 480, 40, 20]
+    }
+  ]
+}

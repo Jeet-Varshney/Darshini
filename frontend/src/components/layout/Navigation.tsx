@@ -19,33 +19,33 @@ export const NAV_ITEMS: NavItem[] = [
     id: 'camera-detection',
     label: 'Camera & Detection',
     shortcutKey: '2',
-    badge: 'PLANNED',
-    badgeType: 'neutral',
     isImplementedInMilestone1: false
   },
   {
     id: 'scenario-lab',
     label: 'Scenario Lab',
     shortcutKey: '3',
-    badge: 'PLANNED',
-    badgeType: 'neutral',
     isImplementedInMilestone1: false
   },
   {
     id: 'emergency-routing',
     label: 'Emergency Routing',
     shortcutKey: '4',
-    badge: 'PLANNED',
-    badgeType: 'neutral',
     isImplementedInMilestone1: false
   },
   {
     id: 'incidents-reports',
     label: 'Incidents & Reports',
     shortcutKey: '5',
-    badge: 'PLANNED',
-    badgeType: 'neutral',
     isImplementedInMilestone1: false
+  },
+  {
+    id: 'events-management',
+    label: 'Events & SMS',
+    shortcutKey: '6',
+    badge: 'LIVE',
+    badgeType: 'info',
+    isImplementedInMilestone1: true
   }
 ];
 
@@ -75,7 +75,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                   [{item.shortcutKey}]
                 </span>
 
-                {item.badge && (
+                {item.badge && item.badge !== 'PLANNED' && (
                   <span
                     style={{
                       fontSize: '10px',

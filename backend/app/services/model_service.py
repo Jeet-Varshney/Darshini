@@ -158,9 +158,14 @@ class ModelService:
             norm_ymax = round(float(ymax / h), 4)
             norm_xmax = round(float(xmax / w), 4)
 
+            # Ground-contact point [x_ground, y_ground] (bottom-center on ground plane)
+            ground_x = round(float((norm_xmin + norm_xmax) / 2.0), 4)
+            ground_y = round(float(norm_ymax), 4)
+
             detections.append({
                 "box_pixels": [xmin, ymin, xmax, ymax],
                 "box_normalized": [norm_ymin, norm_xmin, norm_ymax, norm_xmax],
+                "ground_contact_normalized": [ground_x, ground_y],
                 "confidence": round(conf, 4),
                 "class_id": self.person_class_id,
                 "class_name": "person",

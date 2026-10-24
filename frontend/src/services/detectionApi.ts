@@ -5,6 +5,8 @@ import type {
   CameraStatusResponse,
   LiveStreamPacket,
   ZoneStatusListResponse,
+  DetectionHistoryResponse,
+  DetectionHistoryFilterParams,
 } from '../types/detection';
 
 const isBrowser = typeof window !== 'undefined';
@@ -228,3 +230,24 @@ export async function fetchSampleVideoFile(samplePath: string, filename: string)
   const blob = await res.blob();
   return new File([blob], filename, { type: 'video/mp4' });
 }
+
+export async function fetchDetectionHistory(
+  params?: DetectionHistoryFilterParams
+): Promise<DetectionHistoryResponse> {
+  const query = new URLSearchParams();
+  if (params?.camera_id) query.append('camera_id', params.camera_id);
+  if (params?.zone_id) query.append('zone_id', params.zone_id);
+  if (params?.start_time) query.append('start_time', params.start_time);
+  if (params?.end_time) query.append('end_time', params.end_time);
+  if (params?.limit !== undefined) query.append('limit', params.limit.toString());
+  if (params?.order) query.append('order', params.order);
+
+  const qs = query.toString();
+  const url = `${API_BASE_URL}/api/detections/history${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch detection history (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+

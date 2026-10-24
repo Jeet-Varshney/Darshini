@@ -7,4 +7,8 @@
 @import './styles/layout.css';
 @import './styles/map.css';
 @import './styles/detection.css';
+@import './styles/simulation.css';
+@import './styles/events.css';
+@import './styles/routing.css';
+@import './styles/incidents.css';
 

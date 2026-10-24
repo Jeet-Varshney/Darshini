@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Any
 import numpy as np
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
 
 from app.config import (
     ALLOWED_EXTENSIONS,
@@ -33,12 +33,15 @@ from app.schemas import (
     ClientFrameInferRequest,
     LocationSessionResponse,
     LocationUpdateRequest,
+    DetectionHistoryRecord,
+    DetectionHistoryResponse,
 )
 from app.services.model_service import model_service, ModelUnavailableError
 from app.services.video_service import VideoProcessor, VideoProcessingError
 from app.services.camera_discovery import camera_discovery_service
 from app.services.camera_stream import live_camera_manager
 from app.services.location_stream import location_stream_manager
+from app.services.history_service import detection_history_service
 
 logger = logging.getLogger("darshini.routes")
 router = APIRouter()
@@ -539,6 +542,48 @@ async def websocket_camera_stream(websocket: WebSocket):
         live_camera_manager.unregister_subscriber(queue)
         live_camera_manager.mark_client_disconnected(client_id)
         logger.info("WebSocket subscriber unregistered: %s (remaining: %d)", client_id, live_camera_manager.subscriber_count)
+
+
+# ============================================================================
+# Persistent Detection History Telemetry (SQLite)
+# ============================================================================
+
+@router.get(
+    "/api/detections/history",
+    response_model=DetectionHistoryResponse,
+    summary="Get persistent detection telemetry history",
+    description="Returns chronological sampled detection records from SQLite storage with optional camera, zone, and time filters.",
+)
+async def get_detection_history(
+    camera_id: Optional[str] = Query(None, description="Filter by camera or client ID / label"),
+    zone_id: Optional[str] = Query(None, description="Filter by assigned zone ID"),
+    start_time: Optional[str] = Query(None, description="Filter records at or after this ISO 8601 UTC timestamp"),
+    end_time: Optional[str] = Query(None, description="Filter records at or before this ISO 8601 UTC timestamp"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum number of historical records to retrieve"),
+    order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order by timestamp ('asc' or 'desc')"),
+):
+    """
+    Queries sampled historical detection telemetry from SQLite storage.
+    Enforces parameterized queries to protect against SQL injection and returns an empty list
+    when no matching history exists.
+    """
+    records = detection_history_service.query_history(
+        camera_id=camera_id,
+        zone_id=zone_id,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+        order=order,
+    )
+    history_records = [DetectionHistoryRecord(**r) for r in records]
+    return DetectionHistoryResponse(
+        total=len(history_records),
+        limit=limit,
+        records=history_records,
+        camera_id=camera_id,
+        zone_id=zone_id,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 # ============================================================================

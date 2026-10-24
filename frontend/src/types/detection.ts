@@ -93,7 +93,15 @@ export interface LiveStreamPacket {
   tracked_persons_count?: number;
   stationary_count?: number;
   bounding_boxes?: BoundingBox[];
-  detections?: Array<BoundingBox & { track_id?: number | string; is_stationary?: boolean }>;
+  detections?: Array<
+    BoundingBox & {
+      track_id?: number | string;
+      is_stationary?: boolean;
+      assigned_zone_id?: string | null;
+      ground_point_pixels?: [number, number];
+      ground_contact_normalized?: [number, number];
+    }
+  >;
   capture_fps?: number;
   inference_fps?: number;
   inference_duration_ms?: number;
@@ -131,3 +139,37 @@ export interface ZoneStatusListResponse {
   timestamp: string;
   multiple_camera_disclaimer: string;
 }
+
+export interface DetectionHistoryRecord {
+  id: number;
+  timestamp: string;
+  camera_id: string;
+  camera_name: string;
+  zone_id?: string | null;
+  zone_name?: string | null;
+  person_count: number;
+  stationary_count?: number | null;
+  moving_count?: number | null;
+  avg_confidence?: number | null;
+  inference_duration_ms?: number | null;
+  data_source: string;
+}
+
+export interface DetectionHistoryResponse {
+  total: number;
+  limit: number;
+  records: DetectionHistoryRecord[];
+  camera_id?: string | null;
+  zone_id?: string | null;
+  timestamp: string;
+}
+
+export interface DetectionHistoryFilterParams {
+  camera_id?: string;
+  zone_id?: string;
+  start_time?: string;
+  end_time?: string;
+  limit?: number;
+  order?: 'asc' | 'desc';
+}
+

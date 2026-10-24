@@ -1,0 +1,281 @@
+/* ============================================================================
+   Darshini — Emergency Routing & Corridor Solver Stylesheet
+   Direction: Command Center | Theme: Light | Accent: Steel Blue (#365F8D)
+   ============================================================================ */
+
+.routing-workspace {
+  display: grid;
+  grid-template-columns: minmax(360px, 440px) 1fr;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  background: var(--bg-app);
+  min-height: calc(100vh - 120px);
+}
+
+@media (max-width: 960px) {
+  .routing-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.routing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.routing-card {
+  background: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  box-shadow: 0 1px 3px rgba(23, 43, 67, 0.05);
+}
+
+.routing-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.route-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  text-align: center;
+}
+
+.route-stat-box {
+  background: var(--surface-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+}
+
+.route-stat-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.route-stat-lbl {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Route segments timeline */
+.route-segments-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.route-segment-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-subtle);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  font-size: 13px;
+}
+
+/* Blocked edges list */
+.blocked-edge-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.blocked-edge-row:last-child {
+  border-bottom: none;
+}
+
+.edge-blocked-badge {
+  background: var(--status-critical-bg);
+  color: var(--status-critical);
+  border: 1px solid var(--status-critical-border);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-badge);
+}
+
+.edge-cleared-badge {
+  background: var(--status-positive-bg);
+  color: var(--status-positive);
+  border: 1px solid var(--status-positive-border);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-badge);
+}
+
+/* Map area container */
+.routing-map-container {
+  background: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 540px;
+}
+
+.routing-map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-secondary);
+  border-bottom: 1px solid var(--border-default);
+  font-size: 13px;
+}
+
+.routing-map-canvas {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  min-height: 520px;
+}
+
+.routing-leaflet-container {
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
+/* Map mode view switcher buttons */
+.map-view-switcher {
+  display: flex;
+  background: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.map-view-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.map-view-btn.active {
+  background: var(--accent-primary, #365F8D);
+  color: #FFFFFF;
+}
+
+/* Custom Leaflet Map Pins */
+.custom-routing-pin {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.routing-pin-origin {
+  background: #245D9C;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.routing-pin-destination {
+  background: #237A57;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.routing-pin-junction {
+  background: #FFFFFF;
+  border: 2px solid #64748B;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Operator Banner */
+.operator-auth-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--border-default);
+}
+
+.operator-auth-banner.authenticated {
+  background: #F0FDF4;
+  border-color: #BBF7D0;
+  color: #166534;
+}
+
+.operator-auth-banner.unauthenticated {
+  background: #FFFBEB;
+  border-color: #FDE68A;
+  color: #92400E;
+}
+
+/* History Audit Modal */
+.audit-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  margin-top: 12px;
+}
+
+.audit-history-item {
+  padding: 8px 12px;
+  background: var(--surface-secondary);
+  border-radius: var(--radius-control);
+  border-left: 3px solid var(--accent-primary);
+  font-size: 12px;
+}
+
+.audit-history-item.block {
+  border-left-color: var(--status-critical);
+}
+
+.audit-history-item.reopen {
+  border-left-color: var(--status-positive);
+}

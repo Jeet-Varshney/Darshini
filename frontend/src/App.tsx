@@ -8,9 +8,11 @@ import { Header } from './components/layout/Header';
 import { Navigation } from './components/layout/Navigation';
 import { LiveOperations } from './screens/LiveOperations';
 import { CameraDetectionScreen } from './screens/CameraDetectionScreen';
-import { ScenarioLabPlaceholder } from './screens/ScenarioLabPlaceholder';
-import { EmergencyRoutingPlaceholder } from './screens/EmergencyRoutingPlaceholder';
-import { IncidentsReportsPlaceholder } from './screens/IncidentsReportsPlaceholder';
+import { ScenarioLab } from './screens/ScenarioLab';
+import { EmergencyRoutingScreen } from './screens/EmergencyRoutingScreen';
+import { IncidentsReportsScreen, type IncidentPrefillContext } from './screens/IncidentsReportsScreen';
+import { EventManagementScreen } from './screens/EventManagementScreen';
+import { PublicRegistrationScreen } from './screens/PublicRegistrationScreen';
 
 export function App() {
   const [activeSection, setActiveSection] = useState<SectionId>('live-operations');
@@ -21,6 +23,22 @@ export function App() {
   // Milestone 3: Live Zone Statuses from backend camera inference
   const [liveZoneStatuses, setLiveZoneStatuses] = useState<Record<string, ZoneLiveStatus>>({});
   const [targetCameraZoneId, setTargetCameraZoneId] = useState<string | null>(null);
+  const [targetRoutingEdgeId, setTargetRoutingEdgeId] = useState<string | null>(null);
+  const [targetIncidentPrefill, setTargetIncidentPrefill] = useState<IncidentPrefillContext | null>(null);
+
+  // URL query parameter state for public attendee screens (?event=slug or ?token=token or ?pass=code)
+  const [urlParams] = useState<{
+    event: string | null;
+    token: string | null;
+    pass: string | null;
+  }>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      event: params.get('event'),
+      token: params.get('token'),
+      pass: params.get('pass'),
+    };
+  });
 
   // Poll backend zone live status every 2.5 seconds
   useEffect(() => {
@@ -61,7 +79,7 @@ export function App() {
     setActiveSection('live-operations');
   };
 
-  // Keyboard shortcut handler for 1-5 navigation
+  // Keyboard shortcut handler for 1-6 navigation
   // Strictly checks that input/textarea/select are not focused and no modifier keys are pressed
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -103,6 +121,10 @@ export function App() {
           e.preventDefault();
           setActiveSection('incidents-reports');
           break;
+        case '6':
+          e.preventDefault();
+          setActiveSection('events-management');
+          break;
         default:
           break;
       }
@@ -123,12 +145,23 @@ export function App() {
     setSelectedZone(null);
   };
 
+  // Render standalone mobile-first public attendee screen if URL contains event, token, or pass params
+  if (urlParams.event || urlParams.token || urlParams.pass) {
+    return (
+      <PublicRegistrationScreen
+        eventSlug={urlParams.event}
+        qrToken={urlParams.token}
+        passCode={urlParams.pass}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       {/* Top Application Header */}
       <Header systemStatus="warning" />
 
-      {/* Main 5-Section Navigation */}
+      {/* Main Navigation */}
       <Navigation
         activeSection={activeSection}
         onSelectSection={setActiveSection}
@@ -177,11 +210,31 @@ export function App() {
           <CameraDetectionScreen
             initialZoneId={targetCameraZoneId}
             onNavigateToZone={handleNavigateToZone}
+            onEscalateToIncident={(ctx) => {
+              setTargetIncidentPrefill(ctx);
+              setActiveSection('incidents-reports');
+            }}
           />
         )}
-        {activeSection === 'scenario-lab' && <ScenarioLabPlaceholder />}
-        {activeSection === 'emergency-routing' && <EmergencyRoutingPlaceholder />}
-        {activeSection === 'incidents-reports' && <IncidentsReportsPlaceholder />}
+        {activeSection === 'scenario-lab' && <ScenarioLab />}
+        {activeSection === 'emergency-routing' && (
+          <EmergencyRoutingScreen initialEdgeId={targetRoutingEdgeId} />
+        )}
+        {activeSection === 'incidents-reports' && (
+          <IncidentsReportsScreen
+            prefillData={targetIncidentPrefill}
+            onClearPrefill={() => setTargetIncidentPrefill(null)}
+            onNavigateToRouting={(edgeId) => {
+              if (edgeId) setTargetRoutingEdgeId(edgeId);
+              setActiveSection('emergency-routing');
+            }}
+            onNavigateToCamera={(zoneId) => {
+              if (zoneId) setTargetCameraZoneId(zoneId);
+              setActiveSection('camera-detection');
+            }}
+          />
+        )}
+        {activeSection === 'events-management' && <EventManagementScreen />}
       </main>
 
       {/* Operational Footer */}

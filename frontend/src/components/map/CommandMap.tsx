@@ -62,6 +62,34 @@ export const CommandMap: React.FC<CommandMapProps> = ({
   const [isPoorAccuracyDismissed, setIsPoorAccuracyDismissed] = useState<boolean>(false);
   const isSelectingLocationRef = useRef<boolean>(false);
 
+  // Component mount lifecycle tracking to guard async callbacks
+  const isMountedRef = useRef<boolean>(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Geolocation watch cleanup and anti-tight-loop rate-limiting
+  const geolocationWatchIdRef = useRef<number | null>(null);
+  const lastGeoAttemptTimeRef = useRef<number>(0);
+  const [geoRetryCount, setGeoRetryCount] = useState<number>(0);
+
+  // Clean up any outstanding geolocation watches when component unmounts
+  useEffect(() => {
+    return () => {
+      if (geolocationWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          navigator.geolocation.clearWatch(geolocationWatchIdRef.current);
+        } catch {
+          // Silently ignore cleanup error
+        }
+        geolocationWatchIdRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     isSelectingLocationRef.current = isSelectingLocation;
   }, [isSelectingLocation]);
@@ -138,6 +166,16 @@ export const CommandMap: React.FC<CommandMapProps> = ({
   // Handle manual location placement by user (click on map)
   const handleSetManualLocation = useCallback(
     (lat: number, lng: number) => {
+      // Clear any pending watch when user chooses manual coordinates
+      if (geolocationWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          navigator.geolocation.clearWatch(geolocationWatchIdRef.current);
+        } catch {
+          // Ignore
+        }
+        geolocationWatchIdRef.current = null;
+      }
+
       const manualAccuracy = 10;
       const timestamp = Date.now();
       const manualLoc: UserLocation = {
@@ -153,11 +191,12 @@ export const CommandMap: React.FC<CommandMapProps> = ({
       setIsSelectingLocation(false);
       setIsPoorAccuracyDismissed(true);
       setLocationError(null);
+      setGeoRetryCount(0);
       setLocationDiagDetails(`Manually placed pin at [${lat.toFixed(6)}, ${lng.toFixed(6)}]`);
 
       logLocationTelemetry('manual-selection', lat, lng, manualAccuracy, timestamp, [lat, lng]);
 
-      if (mapInstanceRef.current) {
+      if (mapInstanceRef.current && mapInstanceRef.current.getContainer()?.isConnected) {
         mapInstanceRef.current.panTo([lat, lng], { animate: true });
       }
     },
@@ -167,7 +206,14 @@ export const CommandMap: React.FC<CommandMapProps> = ({
   // Request browser location with explicit user permission, high accuracy enabled, and diagnostic telemetry
   const handleUseMyLocation = useCallback(
     (forceHighAccuracy = true) => {
-      // Prevent overlapping requests
+      // 1. Anti-tight-loop protection: throttle repeated requests to minimum 2500ms apart
+      const now = performance.now();
+      if (now - lastGeoAttemptTimeRef.current < 2500) {
+        return;
+      }
+      lastGeoAttemptTimeRef.current = now;
+
+      // 2. Prevent overlapping requests
       if (locationStatus === 'requesting') {
         return;
       }
@@ -229,6 +275,9 @@ export const CommandMap: React.FC<CommandMapProps> = ({
 
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          if (!isMountedRef.current) {
+            return;
+          }
           const elapsed = Math.round(performance.now() - startTime);
           const { latitude, longitude, accuracy } = position.coords;
           const timestamp = position.timestamp || Date.now();
@@ -264,6 +313,7 @@ export const CommandMap: React.FC<CommandMapProps> = ({
           setLocationStatus('active');
           setLocationError(null);
           setIsPoorAccuracyDismissed(false);
+          setGeoRetryCount(0);
           setLocationDiagDetails(
             `Resolved in ${elapsed}ms (accuracy: ±${Math.round(loc.accuracy)}m, mode: ${
               forceHighAccuracy ? 'High-Accuracy/GPS' : 'Standard/Network'
@@ -273,7 +323,7 @@ export const CommandMap: React.FC<CommandMapProps> = ({
           // Development-only telemetry logging
           logLocationTelemetry('navigator.geolocation', loc.lat, loc.lng, loc.accuracy, timestamp, [loc.lat, loc.lng]);
 
-          if (mapInstanceRef.current) {
+          if (mapInstanceRef.current && mapInstanceRef.current.getContainer()?.isConnected) {
             // If accuracy is poor (e.g. >150m, typical of city-level IP geolocation without hardware GPS),
             // fit map bounds to the accuracy circle so the user sees the real uncertainty area
             // rather than falsely zooming deep into a single rooftop.
@@ -293,6 +343,9 @@ export const CommandMap: React.FC<CommandMapProps> = ({
           }
         },
         (error) => {
+          if (!isMountedRef.current) {
+            return;
+          }
           const elapsed = Math.round(performance.now() - startTime);
           let msg = 'Failed to obtain current location.';
           let status: 'denied' | 'unavailable' | 'timeout' = 'unavailable';
@@ -301,19 +354,20 @@ export const CommandMap: React.FC<CommandMapProps> = ({
             case 1: // PERMISSION_DENIED
               status = 'denied';
               msg =
-                'Location permission was denied. If no prompt appeared, your browser has blocked location access for this address. ' +
-                'Click the lock or site settings icon in your browser address bar to allow location access and try again.';
+                'Location permission was denied. Your browser or operating system settings have blocked location access for this address. ' +
+                'The map has defaulted to the configured venue coordinates. You can grant permission in your browser site settings, or place your location pin manually.';
               break;
             case 2: // POSITION_UNAVAILABLE
               status = 'unavailable';
               msg =
-                'Unable to determine your location. The browser could not obtain coordinates from the available positioning providers. ' +
-                'On desktop Linux systems without dedicated GPS hardware, browsers rely on external network positioning services which may be unconfigured, restricted by network firewall/VPN, or unavailable.';
+                'Device location is currently unavailable. The browser could not obtain coordinates from the available positioning providers (Error Code 2: UNAVAILABLE). ' +
+                `The map has fallen back to the configured demo venue coordinates (${venue.name}). You can click "Set Pin Manually" to place your location pin on the map, or retry.`;
               break;
             case 3: // TIMEOUT
               status = 'timeout';
               msg =
-                'The request to get your location timed out. Please check your network connection or signal and try again.';
+                'The request to get your location timed out before receiving coordinates (Error Code 3: TIMEOUT). ' +
+                `The map is displaying the configured demo venue coordinates (${venue.name}). Please check your connection and retry, or set your location manually.`;
               break;
             default:
               msg = error.message || 'An unknown error occurred while retrieving device location.';
@@ -322,21 +376,30 @@ export const CommandMap: React.FC<CommandMapProps> = ({
 
           setLocationStatus(status);
           setLocationError(msg);
+          setGeoRetryCount((prev) => prev + 1);
           setLocationDiagDetails(
             `Error Code ${error.code} (${status.toUpperCase()}) • Elapsed: ${elapsed}ms • Provider: ${
-              error.message || 'No additional message'
+              error.message || 'Error acquiring position'
             }`
           );
+
+          // Gracefully fall back to existing fictional/demo venue coordinates without presenting them as user's location
+          if (mapInstanceRef.current && mapInstanceRef.current.getContainer()?.isConnected && viewMode === 'tiles') {
+            mapInstanceRef.current.flyTo(venue.center, venue.defaultZoom, {
+              animate: true,
+              duration: 1.0,
+            });
+          }
         },
         geoOptions
       );
     },
-    [locationStatus, permissionState, viewMode, logLocationTelemetry]
+    [locationStatus, permissionState, viewMode, logLocationTelemetry, venue]
   );
 
   // Recenter map back to configured venue
   const handleRecenterVenue = useCallback(() => {
-    if (mapInstanceRef.current && viewMode === 'tiles') {
+    if (mapInstanceRef.current && mapInstanceRef.current.getContainer()?.isConnected && viewMode === 'tiles') {
       mapInstanceRef.current.flyTo(venue.center, venue.defaultZoom, {
         animate: true,
         duration: 1.0,
@@ -349,16 +412,26 @@ export const CommandMap: React.FC<CommandMapProps> = ({
     setLocationError(null);
     setLocationDiagDetails(null);
     setLocationStatus('idle');
+    setGeoRetryCount(0);
   };
 
   // Clear live user location
   const handleClearLocation = () => {
+    if (geolocationWatchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+      try {
+        navigator.geolocation.clearWatch(geolocationWatchIdRef.current);
+      } catch {
+        // Silently ignore cleanup error
+      }
+      geolocationWatchIdRef.current = null;
+    }
     setUserLocation(null);
     setLocationStatus('idle');
     setLocationError(null);
     setLocationDiagDetails(null);
     setIsSelectingLocation(false);
     setIsPoorAccuracyDismissed(false);
+    setGeoRetryCount(0);
     handleRecenterVenue();
   };
 
@@ -463,12 +536,90 @@ export const CommandMap: React.FC<CommandMapProps> = ({
       }
     });
 
-    // Invalidate size on mount
-    setTimeout(() => {
+    // Lifecycle and resize observer management for invalidateSize
+    let isDisposed = false;
+    let initialTimerId: ReturnType<typeof setTimeout> | null = null;
+    let rafId: number | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const safeInvalidateSize = () => {
+      if (isDisposed) {
+        return;
+      }
+      // Ensure the container element is still connected to the DOM
+      const container = mapContainerRef.current;
+      if (!container || !container.isConnected) {
+        return;
+      }
+      // Verify map instance is still the active one
+      if (mapInstanceRef.current !== map) {
+        return;
+      }
+      // Check that the Leaflet map container is attached and map panes are present
+      const mapContainer = map.getContainer();
+      if (!mapContainer || !mapContainer.isConnected) {
+        return;
+      }
+      const panes = map.getPanes();
+      if (!panes || !panes.mapPane) {
+        return;
+      }
+
       map.invalidateSize();
+    };
+
+    const scheduleInvalidate = () => {
+      if (isDisposed) {
+        return;
+      }
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        safeInvalidateSize();
+      });
+    };
+
+    // Initial size invalidation once DOM layout has resolved
+    scheduleInvalidate();
+
+    // Secondary short delay to ensure any CSS transitions, fonts, or flexbox container calculations settle
+    initialTimerId = setTimeout(() => {
+      initialTimerId = null;
+      safeInvalidateSize();
     }, 150);
 
+    // Lifecycle-safe ResizeObserver for responsive layout, sidebar collapse/expand, viewport changes
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        scheduleInvalidate();
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
+      isDisposed = true;
+
+      if (initialTimerId !== null) {
+        clearTimeout(initialTimerId);
+        initialTimerId = null;
+      }
+
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
+
+      polygonLayerGroupRef.current = null;
+      markersLayerGroupRef.current = null;
+      userLocationLayerGroupRef.current = null;
+
       map.remove();
       mapInstanceRef.current = null;
     };
@@ -769,8 +920,43 @@ export const CommandMap: React.FC<CommandMapProps> = ({
               </button>
             </span>
           )}
-          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-            {venue.name}
+          <span
+            style={{
+              fontSize: '11px',
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-mono)',
+              padding: '2px 8px',
+              borderRadius: 'var(--radius-badge, 4px)',
+              backgroundColor: 'var(--bg-subtle, #F1F5F9)',
+              border: '1px solid var(--border-default, #E2E8F0)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+            title={
+              userLocation
+                ? isManualLocation(userLocation)
+                  ? 'Manual pin coordinates placed on map'
+                  : 'Live GPS/browser device coordinates'
+                : `Default demo venue coordinates [${venue.center[0].toFixed(4)}, ${venue.center[1].toFixed(4)}]. Not user device location.`
+            }
+          >
+            {userLocation ? (
+              <>
+                <span>{isManualLocation(userLocation) ? '📍' : '🛰️'}</span>
+                <span>{isManualLocation(userLocation) ? 'Manual Pin Placed' : 'Device GPS Active'}</span>
+              </>
+            ) : locationStatus === 'unavailable' || locationStatus === 'denied' || locationStatus === 'timeout' ? (
+              <>
+                <span>⚠️</span>
+                <span>Fallback: Demo Venue ({venue.name})</span>
+              </>
+            ) : (
+              <>
+                <span>🏛️</span>
+                <span>Demo Venue: {venue.name}</span>
+              </>
+            )}
           </span>
         </div>
       </div>
@@ -933,8 +1119,46 @@ export const CommandMap: React.FC<CommandMapProps> = ({
         <div className="map-location-error-banner" role="alert">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-              <span style={{ fontSize: '14px', flexShrink: 0 }}>⚠️</span>
-              <span style={{ fontSize: '12px', lineHeight: 1.4 }}>{locationError}</span>
+              <span style={{ fontSize: '14px', flexShrink: 0 }}>
+                {locationStatus === 'denied' ? '🔒' : locationStatus === 'timeout' ? '⏱️' : '⚠️'}
+              </span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)' }}>
+                  {locationStatus === 'denied'
+                    ? 'Location Permission Denied (Error Code 1)'
+                    : locationStatus === 'unavailable'
+                    ? 'Device Location Unavailable (Error Code 2)'
+                    : locationStatus === 'timeout'
+                    ? 'Location Request Timed Out (Error Code 3)'
+                    : locationStatus === 'insecure'
+                    ? 'Insecure HTTP Context'
+                    : 'Geolocation Notice'}
+                </div>
+                <div style={{ fontSize: '11px', lineHeight: 1.45, color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  {locationError}
+                </div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--text-primary)',
+                    marginTop: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontWeight: 500,
+                  }}
+                >
+                  <span>🏛️</span>
+                  <span>
+                    <strong>Fallback Active:</strong> Showing demo venue coordinates (<em>{venue.name}</em> [{venue.center[0].toFixed(4)}, {venue.center[1].toFixed(4)}]). These are not your actual device coordinates.
+                  </span>
+                </div>
+                {geoRetryCount >= 2 && locationStatus === 'unavailable' && (
+                  <div style={{ fontSize: '10px', color: 'var(--status-warning, #A15C00)', marginTop: '2px', fontStyle: 'italic' }}>
+                    💡 Tip: Positioning services are persistently unavailable on this environment. Click &quot;Set Pin Manually&quot; to place your pin directly on the map.
+                  </div>
+                )}
+              </div>
             </div>
             {locationDiagDetails && (
               <div
@@ -944,6 +1168,7 @@ export const CommandMap: React.FC<CommandMapProps> = ({
                   fontFamily: 'var(--font-mono)',
                   paddingLeft: '22px',
                   wordBreak: 'break-word',
+                  marginTop: '2px',
                 }}
               >
                 Diagnostic: {locationDiagDetails}
@@ -958,20 +1183,21 @@ export const CommandMap: React.FC<CommandMapProps> = ({
                   className="btn-location-action"
                   onClick={() => handleUseMyLocation(true)}
                   style={{ borderColor: 'var(--status-warning)', color: 'var(--status-warning)' }}
-                  title="Retry geolocation"
+                  title="Retry geolocation (rate-limited)"
+                  disabled={locationStatus === 'requesting'}
                 >
-                  Retry
+                  🔄 Retry
                 </button>
                 <button
                   type="button"
-                  className="btn-location-action"
+                  className="btn-location-action btn-location-action-primary"
                   onClick={() => setIsSelectingLocation(true)}
                   style={{
                     borderColor: 'var(--border-default)',
                     color: 'var(--text-secondary)',
                     fontSize: '10px',
                   }}
-                  title="Set location manually on map"
+                  title="Click anywhere on the map to place your pin manually"
                 >
                   📍 Set Pin Manually
                 </button>
@@ -986,9 +1212,9 @@ export const CommandMap: React.FC<CommandMapProps> = ({
                 color: 'var(--text-secondary)',
                 fontSize: '10px',
               }}
-              title="Center map on configured venue"
+              title="Center map on configured demo venue"
             >
-              🏛️ Venue Map
+              🏛️ Demo Venue View
             </button>
             <button
               type="button"

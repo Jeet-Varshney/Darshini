@@ -27,6 +27,7 @@ from app.config import (
 )
 from app.services.model_service import model_service, ModelUnavailableError
 from app.services.camera_discovery import camera_discovery_service
+from app.services.history_service import detection_history_service
 
 logger = logging.getLogger("darshini.camera_stream")
 
@@ -85,19 +86,61 @@ def compute_box_iou(b1: List[int], b2: List[int]) -> float:
     return float(inter_area / union_area)
 
 
+def map_detection_to_zone(
+    ground_contact_norm: List[float],
+    assigned_zone_id: Optional[str],
+    zone_partitions: Optional[Dict[str, List[float]]] = None,
+) -> Optional[str]:
+    """
+    Associates a normalized detection ground-contact point [x_ground, y_ground] with a venue zone.
+    Coordinate system: Normalized image coordinates [0.0, 1.0] x [0.0, 1.0] where (0,0) is top-left.
+    Boundary rule: Half-open interval [min, max) prevents any detection on boundary lines from being
+    counted in multiple zones.
+    """
+    if not ground_contact_norm or len(ground_contact_norm) < 2:
+        return assigned_zone_id
+
+    x_g, y_g = ground_contact_norm[0], ground_contact_norm[1]
+
+    # If sub-zone ROI partitions are configured for the camera view:
+    # Each partition defines [xmin, ymin, xmax, ymax] in normalized coordinates
+    if zone_partitions:
+        for z_id, roi in zone_partitions.items():
+            if len(roi) == 4:
+                xmin, ymin, xmax, ymax = roi
+                # Half-open interval [xmin, xmax) and [ymin, ymax) with boundary edge coverage
+                in_x = (xmin <= x_g < xmax) or (xmax >= 1.0 and xmin <= x_g <= 1.0)
+                in_y = (ymin <= y_g < ymax) or (ymax >= 1.0 and ymin <= y_g <= 1.0)
+                if in_x and in_y:
+                    return z_id
+
+    # Default: Camera is dedicated to its assigned venue zone
+    if assigned_zone_id in VENUE_ZONES:
+        return assigned_zone_id
+
+    return None
+
+
 class StationaryPersonTracker:
     """
     2-Tier Hysteresis Tracker for Stationary Person Detection.
     Maintains confirmed tracks across consecutive frames to prevent detection drops
     on motionless individuals without accumulating count across frames.
+    Only returns detections with active evidence in the current frame to prevent
+    ghost counts while preserving temporal continuity for stationary persons.
     """
 
-    def __init__(self, init_conf: float = 0.22, retain_conf: float = 0.15, max_missed: int = 8):
+    def __init__(self, init_conf: float = 0.25, retain_conf: float = 0.20, max_missed: int = 5):
         self.init_conf = init_conf
         self.retain_conf = retain_conf
         self.max_missed = max_missed
         self._next_id = 1
         self.tracks: List[Dict[str, Any]] = []
+
+    def reset(self) -> None:
+        """Clears internal track history."""
+        self.tracks.clear()
+        self._next_id = 1
 
     def update(self, raw_detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -106,6 +149,7 @@ class StationaryPersonTracker:
         """
         unmatched_dets = list(raw_detections)
         matched_track_indices = set()
+        active_results = []
 
         for t_idx, track in enumerate(self.tracks):
             best_iou = 0.0
@@ -131,54 +175,84 @@ class StationaryPersonTracker:
                 )
 
                 # Flag stationary if movement is under 6% of diagonal (cast to pure Python bool)
-                is_stationary = bool((dist / max(box_diag, 1.0)) < 0.06)
+                # Must be observed for at least 2 consecutive frames to qualify as stationary
+                hits = track["hits"] + 1
+                is_stationary = bool(hits >= 2 and (dist / max(box_diag, 1.0)) < 0.06)
+
+                norm_box = [float(v) for v in matched_det["box_normalized"]]
+                gc = [
+                    float(v) for v in matched_det.get(
+                        "ground_contact_normalized",
+                        [round((norm_box[1] + norm_box[3]) / 2.0, 4), norm_box[2]]
+                    )
+                ]
 
                 track["box_pixels"] = [int(v) for v in matched_det["box_pixels"]]
-                track["box_normalized"] = [float(v) for v in matched_det["box_normalized"]]
+                track["box_normalized"] = norm_box
+                track["ground_contact_normalized"] = gc
                 track["confidence"] = float(matched_det["confidence"])
                 track["missed_count"] = 0
-                track["hits"] += 1
+                track["hits"] = hits
                 track["is_stationary"] = is_stationary
                 track["last_seen"] = time.time()
                 matched_track_indices.add(t_idx)
+
+                # Only actively matched detections in the CURRENT frame are returned for counting
+                active_results.append({
+                    "track_id": int(track["track_id"]),
+                    "box_pixels": [int(v) for v in track["box_pixels"]],
+                    "box_normalized": [float(v) for v in track["box_normalized"]],
+                    "ground_contact_normalized": [float(v) for v in track["ground_contact_normalized"]],
+                    "confidence": float(track["confidence"]),
+                    "class_id": 0,
+                    "class_name": "person",
+                    "is_stationary": bool(track["is_stationary"]),
+                    "dwell_time_sec": round(float(time.time() - track["created_at"]), 1),
+                })
             else:
                 track["missed_count"] += 1
 
-        # Establish new tracks from unmatched high-confidence detections
+        # Establish new tracks from unmatched detections only if confidence >= init_conf
         for det in unmatched_dets:
             if det["confidence"] >= self.init_conf:
+                norm_box = [float(v) for v in det["box_normalized"]]
+                gc = [
+                    float(v) for v in det.get(
+                        "ground_contact_normalized",
+                        [round((norm_box[1] + norm_box[3]) / 2.0, 4), norm_box[2]]
+                    )
+                ]
                 new_track = {
                     "track_id": self._next_id,
-                    "box_pixels": det["box_pixels"],
-                    "box_normalized": det["box_normalized"],
-                    "confidence": det["confidence"],
+                    "box_pixels": [int(v) for v in det["box_pixels"]],
+                    "box_normalized": norm_box,
+                    "ground_contact_normalized": gc,
+                    "confidence": float(det["confidence"]),
                     "class_id": 0,
                     "class_name": "person",
                     "missed_count": 0,
                     "hits": 1,
-                    "is_stationary": True,
+                    "is_stationary": False,
                     "created_at": time.time(),
                     "last_seen": time.time(),
                 }
                 self._next_id += 1
                 self.tracks.append(new_track)
 
+                active_results.append({
+                    "track_id": int(new_track["track_id"]),
+                    "box_pixels": [int(v) for v in new_track["box_pixels"]],
+                    "box_normalized": [float(v) for v in new_track["box_normalized"]],
+                    "ground_contact_normalized": [float(v) for v in new_track["ground_contact_normalized"]],
+                    "confidence": float(new_track["confidence"]),
+                    "class_id": 0,
+                    "class_name": "person",
+                    "is_stationary": False,
+                    "dwell_time_sec": 0.0,
+                })
+
         # Prune tracks that exceeded max missed frames
         self.tracks = [t for t in self.tracks if t["missed_count"] <= self.max_missed]
-
-        # Return confirmed active detections for this frame with pure Python primitives
-        active_results = []
-        for t in self.tracks:
-            active_results.append({
-                "track_id": int(t["track_id"]),
-                "box_pixels": [int(v) for v in t["box_pixels"]],
-                "box_normalized": [float(v) for v in t["box_normalized"]],
-                "confidence": float(t["confidence"]),
-                "class_id": 0,
-                "class_name": "person",
-                "is_stationary": bool(t["is_stationary"]),
-                "dwell_time_sec": round(float(time.time() - t["created_at"]), 1),
-            })
 
         return active_results
 
@@ -505,7 +579,10 @@ class LiveCameraManager:
             self._latest_frame_id = 0
             self._last_inferred_frame_id = -1
             self._frame_available_event.clear()
-            self._tracker = StationaryPersonTracker(init_conf=max(0.20, conf_threshold - 0.05))
+            self._tracker = StationaryPersonTracker(
+                init_conf=conf_threshold,
+                retain_conf=max(0.15, conf_threshold - 0.05),
+            )
 
             # Store current event loop for subscriber notifications
             try:
@@ -685,14 +762,22 @@ class LiveCameraManager:
             # Run genuine model inference
             t_start = time.time()
             try:
-                # Query with lower retention threshold to feed hysteresis tracker
+                # Query with calibrated retention threshold to feed hysteresis tracker
                 raw_detections = model_service.detect_persons(
                     raw_frame,
-                    conf_threshold=0.15,
+                    conf_threshold=self._tracker.retain_conf,
                     imgsz=DEFAULT_INFERENCE_IMGSZ,
                 )
                 # Filter through stationary-aware hysteresis tracker
                 tracked_detections = self._tracker.update(raw_detections)
+
+                # Associate each detection with venue zone via ground contact point
+                target_zone = self._assigned_zone_id or "zone-north-plaza"
+                for det in tracked_detections:
+                    det["assigned_zone_id"] = map_detection_to_zone(
+                        det.get("ground_contact_normalized", []),
+                        target_zone,
+                    )
             except Exception as e:
                 logger.error("Inference failed on live camera frame: %s", e)
                 continue
@@ -713,6 +798,34 @@ class LiveCameraManager:
                 self._latest_infer_duration_ms = t_duration_ms
                 self._last_inference_epoch = now
                 self._last_inference_time_iso = datetime.now(timezone.utc).isoformat()
+
+            # Persist sampled telemetry into SQLite (enforces <= 1 sample per 2.0s)
+            try:
+                zone_info = VENUE_ZONES.get(target_zone)
+                z_name = zone_info["name"] if zone_info else "Unassigned Zone"
+                stat_count = sum(1 for d in tracked_detections if d.get("is_stationary"))
+                mov_count = len(tracked_detections) - stat_count
+                avg_conf = (
+                    round(sum(d.get("confidence", 0.0) for d in tracked_detections) / len(tracked_detections), 4)
+                    if tracked_detections
+                    else None
+                )
+                detection_history_service.record_detection(
+                    camera_id=f"device-{self._device_index}" if self._device_index is not None else "server-camera",
+                    camera_name=self._camera_name,
+                    person_count=len(tracked_detections),
+                    zone_id=target_zone,
+                    zone_name=z_name,
+                    stationary_count=stat_count,
+                    moving_count=mov_count,
+                    avg_confidence=avg_conf,
+                    inference_duration_ms=t_duration_ms,
+                    data_source="LIVE_CAMERA_INFERENCE",
+                    timestamp=self._last_inference_time_iso,
+                    epoch_time=now,
+                )
+            except Exception as e:
+                logger.error("Failed to record server detection history sample: %s", e)
 
         logger.debug("Inference worker exited.")
 
@@ -775,6 +888,7 @@ class LiveCameraManager:
                     "assigned_zone_code": zone_code,
                     "person_count": person_count,
                     "bounding_boxes": detections,
+                    "detections": detections,
                     "capture_fps": round(self._measured_capture_fps, 1),
                     "inference_fps": round(self._measured_inference_fps, 1),
                     "inference_duration_ms": round(infer_duration_ms, 1),
@@ -842,6 +956,11 @@ class LiveCameraManager:
                 thickness,
                 cv2.LINE_AA,
             )
+
+            # Ground-contact marker on ground plane
+            gc_x = int(round((xmin + xmax) / 2.0))
+            gc_y = ymax
+            cv2.circle(annotated, (gc_x, gc_y), 3, (0, 215, 255), -1)
 
         # Top Live Telemetry HUD Bar (Darshini Operational Header)
         hud_h = 30
@@ -926,8 +1045,13 @@ class LiveCameraManager:
         # 2. Get or initialize client-specific stationary hysteresis tracker
         with self._detection_lock:
             if client_id not in self._client_trackers:
-                self._client_trackers[client_id] = StationaryPersonTracker()
+                self._client_trackers[client_id] = StationaryPersonTracker(
+                    init_conf=conf_threshold,
+                    retain_conf=max(0.15, conf_threshold - 0.05),
+                )
             tracker = self._client_trackers[client_id]
+            tracker.init_conf = conf_threshold
+            tracker.retain_conf = max(0.15, conf_threshold - 0.05)
 
             if client_id not in self._client_timestamps:
                 self._client_timestamps[client_id] = deque(maxlen=20)
@@ -945,29 +1069,31 @@ class LiveCameraManager:
         t_start = time.time()
         raw_detections = model_service.detect_persons(
             frame_bgr,
-            conf_threshold=0.15,
+            conf_threshold=tracker.retain_conf,
             imgsz=DEFAULT_INFERENCE_IMGSZ,
         )
         tracked_detections = tracker.update(raw_detections)
         infer_duration_ms = (time.time() - t_start) * 1000
-
-        # Filter by requested confidence threshold if higher than 0.15 and normalize primitives
-        final_detections = [
-            {
-                **d,
-                "track_id": int(d.get("track_id", 0)),
-                "confidence": float(d.get("confidence", 0.0)),
-                "is_stationary": bool(d.get("is_stationary", False)),
-            }
-            for d in tracked_detections
-            if bool(d.get("is_stationary", False)) or float(d.get("confidence", 0.0)) >= conf_threshold
-        ]
 
         # 4. Resolve zone assignment
         target_zone = zone_id or self._assigned_zone_id or "zone-north-plaza"
         zone_info = VENUE_ZONES.get(target_zone)
         zone_code = zone_info["code"] if zone_info else "Z-??"
         zone_name = zone_info["name"] if zone_info else "Unknown Zone"
+
+        final_detections = []
+        for d in tracked_detections:
+            assigned_z = map_detection_to_zone(
+                d.get("ground_contact_normalized", []),
+                target_zone,
+            )
+            final_detections.append({
+                **d,
+                "track_id": int(d.get("track_id", 0)),
+                "confidence": float(d.get("confidence", 0.0)),
+                "is_stationary": bool(d.get("is_stationary", False)),
+                "assigned_zone_id": assigned_z,
+            })
 
         # 5. Render live annotation with Darshini HUD
         annotated_b64 = self._render_live_annotation(
@@ -993,6 +1119,32 @@ class LiveCameraManager:
                 "inference_fps": client_infer_fps,
                 "duration_ms": infer_duration_ms,
             }
+
+        # 7. Persist sampled telemetry into SQLite (enforces <= 1 sample per 2.0s)
+        try:
+            stat_count = sum(1 for d in final_detections if d.get("is_stationary"))
+            mov_count = len(final_detections) - stat_count
+            avg_conf = (
+                round(sum(d.get("confidence", 0.0) for d in final_detections) / len(final_detections), 4)
+                if final_detections
+                else None
+            )
+            detection_history_service.record_detection(
+                camera_id=client_id,
+                camera_name=camera_name or "Browser Camera",
+                person_count=len(final_detections),
+                zone_id=target_zone,
+                zone_name=zone_name,
+                stationary_count=stat_count,
+                moving_count=mov_count,
+                avg_confidence=avg_conf,
+                inference_duration_ms=infer_duration_ms,
+                data_source="LIVE_CAMERA_INFERENCE",
+                timestamp=iso_now,
+                epoch_time=completion_time,
+            )
+        except Exception as e:
+            logger.error("Failed to record client detection history sample: %s", e)
 
         return {
             "type": "frame",

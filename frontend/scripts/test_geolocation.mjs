@@ -49,6 +49,10 @@ class GeolocationFlowSimulator {
     this.flyToCalls = [];
     this.fitBoundsCalls = [];
     this.telemetryLogs = [];
+    this.lastAttemptTime = 0;
+    this.activeWatchId = null;
+    this.isFallbackActive = false;
+    this.displayedCoordinatesLabel = 'Demo Venue: Bharat Mandapam Precinct';
   }
 
   // Simulate Permissions API
@@ -77,6 +81,12 @@ class GeolocationFlowSimulator {
 
   // Simulated request flow matching CommandMap.tsx
   handleUseMyLocation(forceHighAccuracy = true) {
+    const now = Date.now();
+    if (now - this.lastAttemptTime < 2500 && this.lastAttemptTime !== 0) {
+      return 'THROTTLED_RATE_LIMITED';
+    }
+    this.lastAttemptTime = now;
+
     if (this.locationStatus === 'requesting') {
       return 'OVERLAPPING_IGNORED';
     }
@@ -216,18 +226,20 @@ class GeolocationFlowSimulator {
       case 1:
         status = 'denied';
         msg =
-          'Location permission was denied. If no prompt appeared, your browser has blocked location access for this address. ' +
-          'Click the lock or site settings icon in your browser address bar to allow location access and try again.';
+          'Location permission was denied. Your browser or operating system settings have blocked location access for this address. ' +
+          'The map has defaulted to the configured venue coordinates. You can grant permission in your browser site settings, or place your location pin manually.';
         break;
       case 2:
         status = 'unavailable';
         msg =
-          'Unable to determine your location. The browser could not obtain coordinates from the available positioning providers. ' +
-          'On desktop Linux systems without dedicated GPS hardware, browsers rely on external network positioning services which may be unconfigured, restricted by network firewall/VPN, or unavailable.';
+          'Device location is currently unavailable. The browser could not obtain coordinates from the available positioning providers (Error Code 2: UNAVAILABLE). ' +
+          'The map has fallen back to the configured demo venue coordinates. You can click "Set Pin Manually" to place your location pin on the map, or retry.';
         break;
       case 3:
         status = 'timeout';
-        msg = 'The request to get your location timed out. Please check your network connection or signal and try again.';
+        msg =
+          'The request to get your location timed out before receiving coordinates (Error Code 3: TIMEOUT). ' +
+          'The map is displaying the configured demo venue coordinates. Please check your connection and retry, or set your location manually.';
         break;
       default:
         msg = error.message || 'An unknown error occurred while retrieving device location.';
@@ -236,10 +248,31 @@ class GeolocationFlowSimulator {
 
     this.locationStatus = status;
     this.locationError = msg;
-    this.locationDiagDetails = `Error Code ${error.code} (${status.toUpperCase()}) • Provider: ${error.message || 'None'}`;
+    this.locationDiagDetails = `Error Code ${error.code} (${status.toUpperCase()}) • Provider: ${error.message || 'Error acquiring position'}`;
+    this.userLocation = null;
+    this.mapCenter = [...this.venueCenter];
+    this.isFallbackActive = true;
+    this.displayedCoordinatesLabel = 'Fallback: Demo Venue Coordinates';
+  }
+
+  // Geolocation watch registration simulation
+  watchPosition(cb, errCb) {
+    this.activeWatchId = 999;
+    return this.activeWatchId;
+  }
+
+  clearWatch(id) {
+    if (this.activeWatchId === id) {
+      this.activeWatchId = null;
+      return true;
+    }
+    return false;
   }
 
   handleClearLocation() {
+    if (this.activeWatchId !== null) {
+      this.clearWatch(this.activeWatchId);
+    }
     this.userLocation = null;
     this.locationStatus = 'idle';
     this.locationError = null;
@@ -249,6 +282,8 @@ class GeolocationFlowSimulator {
     this.isPoorAccuracyDismissed = false;
     this.mapCenter = [...this.venueCenter];
     this.mapZoom = this.venueZoom;
+    this.isFallbackActive = false;
+    this.displayedCoordinatesLabel = 'Demo Venue: Bharat Mandapam Precinct';
   }
 }
 
@@ -287,10 +322,12 @@ console.log('Running Darshini Comprehensive Geolocation Test Suite...\n');
   });
   sim.handleUseMyLocation(true);
   assert.strictEqual(sim.locationStatus, 'unavailable');
-  assert.ok(sim.locationError.includes('Unable to determine your location'));
+  assert.ok(sim.locationError.includes('Device location is currently unavailable'));
+  assert.ok(sim.locationError.includes('Error Code 2: UNAVAILABLE'));
   assert.ok(sim.locationDiagDetails.includes('Error Code 2'));
   assert.ok(sim.locationDiagDetails.includes('googleapis.com'));
-  assert.strictEqual(sim.userLocation, null);
+  assert.strictEqual(sim.userLocation, null, 'Must never set fake user coordinates on unavailable error');
+  assert.strictEqual(sim.isFallbackActive, true);
   assert.deepStrictEqual(sim.mapCenter, sim.venueCenter, 'Venue map preserved when position is unavailable');
   console.log('✔ Test 3: Error Code 2 (POSITION_UNAVAILABLE) properly diagnoses provider failure without fabricating data');
 }
@@ -468,6 +505,59 @@ console.log('Running Darshini Comprehensive Geolocation Test Suite...\n');
   console.log('✔ Test 17: Telemetry logged in dev mode only; strictly suppressed in production mode');
 }
 
+// Test 18: Exact Observed Diagnostic Code 2 "Error acquiring position"
+{
+  const sim = new GeolocationFlowSimulator({
+    mockError: { code: 2, message: 'Error acquiring position' }
+  });
+  sim.handleUseMyLocation(true);
+  assert.strictEqual(sim.locationStatus, 'unavailable');
+  assert.ok(sim.locationError.includes('Device location is currently unavailable'));
+  assert.ok(sim.locationError.includes('demo venue coordinates'));
+  assert.ok(sim.locationDiagDetails.includes('Error acquiring position'));
+  assert.strictEqual(sim.userLocation, null, 'User location must remain null');
+  assert.deepStrictEqual(sim.mapCenter, sim.venueCenter, 'Must fallback to demo venue coordinates');
+  assert.strictEqual(sim.isFallbackActive, true);
+  console.log('✔ Test 18: Exact diagnostic "Error Code 2 (UNAVAILABLE) — Error acquiring position" gracefully handled with demo coordinates fallback');
+}
+
+// Test 19: Anti-Tight-Loop Rate Limiting
+{
+  const sim = new GeolocationFlowSimulator();
+  const res1 = sim.handleUseMyLocation(true);
+  assert.strictEqual(res1, undefined); // Executed
+
+  // Immediate subsequent request within 2500ms must be throttled
+  const res2 = sim.handleUseMyLocation(true);
+  assert.strictEqual(res2, 'THROTTLED_RATE_LIMITED', 'Rapid repeated geolocation requests must be throttled');
+  console.log('✔ Test 19: Anti-tight-loop rate-limiting prevents rapid consecutive geolocation calls (<2500ms)');
+}
+
+// Test 20: Outstanding Geolocation Watch Cleanup
+{
+  const sim = new GeolocationFlowSimulator();
+  const watchId = sim.watchPosition(() => {}, () => {});
+  assert.strictEqual(watchId, 999);
+  assert.strictEqual(sim.activeWatchId, 999);
+
+  // Clearing location or unmounting cleans up the watch
+  sim.handleClearLocation();
+  assert.strictEqual(sim.activeWatchId, null, 'Active watch must be cleared on clear/unmount');
+  console.log('✔ Test 20: Outstanding geolocation watch cleanly cleared on unmount/clear');
+}
+
+// Test 21: Demo Venue Coordinates Clearly Labeled & Not Masqueraded
+{
+  const sim = new GeolocationFlowSimulator({
+    mockError: { code: 2, message: 'Error acquiring position' }
+  });
+  sim.handleUseMyLocation(true);
+  assert.strictEqual(sim.userLocation, null);
+  assert.strictEqual(sim.displayedCoordinatesLabel, 'Fallback: Demo Venue Coordinates');
+  assert.deepStrictEqual(sim.mapCenter, [28.6145, 77.2100]);
+  console.log('✔ Test 21: Demo venue coordinates clearly labeled and never masqueraded as user coordinates');
+}
+
 console.log('\n======================================================');
-console.log('ALL 17 GEOLOCATION TEST SUITE CASES PASSED (100%)');
+console.log('ALL 21 GEOLOCATION TEST SUITE CASES PASSED (100%)');
 console.log('======================================================\n');

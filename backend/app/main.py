@@ -8,8 +8,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router
+from app.api.routes import router as camera_router
+from app.api.routes_simulation import router as simulation_router
+from app.api.routes_auth import router as auth_router
+from app.api.routes_events import router as events_router
+from app.api.routes_public import router as public_router
+from app.api.routes_webhooks import router as webhooks_router
+from app.api.routes_routing import router as routing_router
+from app.api.routes_incidents import router as incidents_router
+from app.db.migrations import run_migrations
 from app.services.model_service import model_service
+from app.services.user_service import UserService
 
 # Configure logging
 logging.basicConfig(
@@ -21,8 +30,14 @@ logger = logging.getLogger("darshini.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initializes the computer-vision model on application startup."""
+    """Initializes database schema, admin bootstrap, and computer-vision model on application startup."""
     logger.info("Initializing Darshini Backend API...")
+    try:
+        run_migrations()
+        UserService.bootstrap_admin_if_needed()
+    except Exception as e:
+        logger.error("Failed during database migration or bootstrap: %s", e)
+
     success = model_service.initialize()
     if success:
         logger.info("Pretrained detection model is ready for inference.")
@@ -39,8 +54,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Darshini API",
-    description="Operational Command Center API with real computer-vision person detection pipeline.",
-    version="0.3.0",
+    description="Operational Command Center API with real computer-vision person detection pipeline, event management, and emergency SMS alert dispatch.",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -61,7 +76,14 @@ app.add_middleware(
 )
 
 # Mount routes
-app.include_router(router)
+app.include_router(camera_router)
+app.include_router(simulation_router)
+app.include_router(auth_router)
+app.include_router(events_router)
+app.include_router(public_router)
+app.include_router(webhooks_router)
+app.include_router(routing_router)
+app.include_router(incidents_router)
 
 
 @app.get("/", summary="API Root", description="Provides basic service identification and docs link.")

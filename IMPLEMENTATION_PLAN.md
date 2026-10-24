@@ -36,14 +36,18 @@ An inspection of the local runtime environment reveals:
   - `/usr/bin/git` is installed and operational.
 
 ### 1.3 Stack Selection & Technical Rationale
-Given the requirements and the audit above, the architecture is selected to achieve high performance, visual beauty, zero runtime crashes, and complete offline presentation reliability:
+Given the requirements and the audit abov
+e, the architecture is selected to achieve high performance, visual beauty, zero runtime crashes, and complete offline presentation reliability:
 
 ```
 +---------------------------------------------------------------------------------------+
 |                                    DARSHINI MVP                                       |
 +---------------------------------------------------------------------------------------+
 |  FRONTEND (Single Page App)                           BACKEND (FastAPI Microservice)  |
-|  - React 18 + TypeScript + Vite                      - FastAPI 0.135 (Python 3.13)    |
+|  - React 18 + TypeScript + Vite 
+
+
+                     - FastAPI 0.135 (Python 3.13)    |
 |  - Vanilla CSS Design Tokens (Zero Tailwind lock-in) - NetworkX 3.4 (Graph Simulation)|
 |  - Leaflet / React-Leaflet (Interactive Street Maps) - Pydantic v2 (Schema Validation)|
 |  - HTML5 Canvas Detection Overlay                    - SQLite / In-Memory Seed Store  |

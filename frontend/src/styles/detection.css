@@ -1426,3 +1426,360 @@
   color: #FFFFFF;
 }
 
+/* ============================================================================
+   Phase 1: Reliable Live Camera Intelligence UI Styles
+   ============================================================================ */
+
+/* Data Provenance Badges */
+.provenance-badge-live {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-badge);
+  background-color: var(--status-positive-bg);
+  color: var(--status-positive);
+  border: 1px solid var(--status-positive-border);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.provenance-badge-upload {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-badge);
+  background-color: var(--status-info-bg);
+  color: var(--status-info);
+  border: 1px solid var(--status-info-border);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.provenance-badge-simulated {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-badge);
+  background-color: var(--surface-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Stale & Lagging Stream State */
+.badge-status-stale {
+  background-color: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+  color: var(--status-warning);
+}
+
+.metric-val-stale {
+  color: var(--status-warning) !important;
+  opacity: 0.85;
+}
+
+.stale-warning-banner {
+  background-color: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+  color: var(--status-warning);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+/* Status Strip */
+.camera-status-strip {
+  background-color: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-default);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.status-strip-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.status-strip-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Live Detection Inspector Table */
+.live-detection-table-wrapper {
+  margin-top: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  overflow-x: auto;
+  background-color: var(--surface-primary);
+}
+
+.live-detection-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  text-align: left;
+}
+
+.live-detection-table th {
+  background-color: var(--surface-subtle);
+  padding: 6px 10px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.live-detection-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.live-detection-table tr:last-child td {
+  border-bottom: none;
+}
+
+.live-detection-table tr:hover td {
+  background-color: var(--surface-subtle);
+}
+
+.track-id-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background-color: var(--surface-secondary);
+  color: var(--accent-primary);
+  border: 1px solid var(--border-default);
+}
+
+.stationary-badge-active {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background-color: #EDE9FE;
+  color: #6D28D9;
+  border: 1px solid #DDD6FE;
+}
+
+.moving-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background-color: var(--status-positive-bg);
+  color: var(--status-positive);
+  border: 1px solid var(--status-positive-border);
+}
+
+.confidence-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confidence-bar {
+  height: 6px;
+  width: 50px;
+  background-color: var(--surface-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  background-color: var(--status-positive);
+  border-radius: 3px;
+}
+
+.zero-detections-banner {
+  padding: var(--space-3);
+  background-color: var(--surface-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-top: var(--space-3);
+}
+
+/* ============================================================================
+   Phase 2: Persistent Detection History Panel Styles
+   ============================================================================ */
+
+.history-panel-card {
+  margin-top: var(--space-4);
+  grid-column: 1 / -1;
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.history-filters-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-filter-select,
+.history-filter-input {
+  padding: 5px 10px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-default);
+  background-color: var(--surface-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.history-filter-select:focus,
+.history-filter-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.btn-refresh-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-default);
+  background-color: var(--surface-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-refresh-history:hover:not(:disabled) {
+  background-color: var(--surface-tertiary);
+  border-color: var(--accent-primary);
+}
+
+.btn-refresh-history:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.history-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background-color: var(--surface-primary);
+}
+
+.history-detection-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  text-align: left;
+}
+
+.history-detection-table th {
+  padding: 8px 12px;
+  background-color: var(--surface-secondary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border-default);
+  white-space: nowrap;
+}
+
+.history-detection-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.history-detection-table tr:hover td {
+  background-color: var(--surface-secondary);
+}
+
+.provenance-chip-archive {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--radius-badge);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background-color: #E0F2FE;
+  color: #0369A1;
+  border: 1px solid #BAE6FD;
+}
+
+.history-footer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+

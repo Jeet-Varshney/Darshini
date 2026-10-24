@@ -1,0 +1,702 @@
+/* ============================================================================
+   Darshini — Digital Twin & Scenario Lab Stylesheet
+   Theme: Command Center Light | Accent: Steel Blue (#365F8D)
+   ============================================================================ */
+
+.scenario-lab-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  width: 100%;
+  box-sizing: border-box;
+  min-height: calc(100vh - 160px);
+}
+
+/* Top Parameter Formulation & Preset Toolbar */
+.scenario-toolbar {
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  box-shadow: var(--shadow-sm);
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.toolbar-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.toolbar-title {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.provenance-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--radius-badge);
+  background-color: var(--accent-subtle);
+  color: var(--accent-primary);
+  border: 1px solid rgba(54, 95, 141, 0.25);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.scenario-presets-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background-color: var(--surface-secondary);
+  padding: 3px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-default);
+}
+
+.preset-btn {
+  background: transparent;
+  border: none;
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  white-space: nowrap;
+}
+
+.preset-btn:hover {
+  color: var(--text-primary);
+  background-color: rgba(255, 255, 255, 0.6);
+}
+
+.preset-btn.active {
+  background-color: var(--surface-primary);
+  color: var(--accent-primary);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--surface-secondary);
+  border-color: var(--border-strong);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background-color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-contrast);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary.dirty {
+  background-color: #A15C00;
+  border-color: #8C4E00;
+  animation: pulse-border 1.8s infinite;
+}
+
+@keyframes pulse-border {
+  0% { box-shadow: 0 0 0 0 rgba(161, 92, 0, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(161, 92, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(161, 92, 0, 0); }
+}
+
+/* Stale Banner */
+.stale-notice {
+  background-color: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+  color: var(--status-warning);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* Main Split Workspace */
+.scenario-workspace {
+  display: grid;
+  grid-template-columns: minmax(420px, 46%) minmax(480px, 54%);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .scenario-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Left Panel: Topology Twin Card */
+.topology-card {
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topology-header {
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.topology-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.legend-swatch.normal {
+  background-color: var(--status-positive);
+}
+
+.legend-swatch.warning {
+  background-color: var(--status-warning);
+}
+
+.legend-swatch.critical {
+  background-color: var(--status-critical);
+}
+
+.legend-swatch.closed {
+  background-color: #64748B;
+}
+
+/* SVG Topology Canvas */
+.topology-canvas-container {
+  position: relative;
+  width: 100%;
+  background-color: #FAFBFD;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+  user-select: none;
+}
+
+.topology-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 480px;
+}
+
+/* Interactive SVG Elements */
+.svg-edge {
+  cursor: pointer;
+  transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s;
+}
+
+.svg-edge:hover {
+  stroke-opacity: 1 !important;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.3));
+}
+
+.svg-edge.selected {
+  stroke: #1E3A8A !important;
+  stroke-dasharray: 4, 3;
+}
+
+.svg-edge.bottleneck-pulse {
+  animation: edge-pulse 1.4s infinite alternate ease-in-out;
+}
+
+@keyframes edge-pulse {
+  from {
+    stroke-opacity: 0.75;
+    filter: drop-shadow(0 0 1px rgba(180, 35, 24, 0.4));
+  }
+  to {
+    stroke-opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(180, 35, 24, 0.85));
+  }
+}
+
+.svg-node {
+  cursor: pointer;
+  transition: transform 0.15s ease-out;
+}
+
+.svg-node:hover {
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.25));
+}
+
+.svg-node.selected circle {
+  stroke: var(--accent-primary) !important;
+  stroke-width: 3.5px !important;
+}
+
+/* Node / Edge Inspector */
+.topology-inspector {
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--surface-subtle);
+  font-size: var(--text-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.inspector-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  background-color: var(--surface-primary);
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-default);
+}
+
+@media (max-width: 600px) {
+  .inspector-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.inspector-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector-stat-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.inspector-stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Right Panel: Controls & Metrics Stack */
+.scenario-right-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Card Styles */
+.scenario-card {
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-title-bar {
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.card-body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Parameter Controls Grid */
+.controls-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 720px) {
+  .controls-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.control-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.control-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.control-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.control-value-badge {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+  background-color: var(--accent-subtle);
+  color: var(--accent-primary);
+}
+
+.slider-container {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.slider-input {
+  width: 100%;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.slider-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.btn-pill-group {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.btn-pill {
+  flex: 1;
+  background-color: var(--surface-secondary);
+  border: 1px solid var(--border-default);
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+}
+
+.btn-pill:hover {
+  background-color: var(--surface-tertiary);
+  color: var(--text-primary);
+}
+
+.btn-pill.active {
+  background-color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--accent-contrast);
+}
+
+/* Road Closure Toggles */
+.closures-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: 2px;
+}
+
+.closure-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-badge);
+  border: 1px solid var(--border-default);
+  background-color: var(--surface-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.closure-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.closure-chip.closed {
+  background-color: var(--status-critical-bg);
+  border-color: var(--status-critical-border);
+  color: var(--status-critical);
+  font-weight: 600;
+}
+
+/* Comparison Table */
+.comparison-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  text-align: left;
+}
+
+.comparison-table th {
+  background-color: var(--surface-subtle);
+  padding: var(--space-2) var(--space-3);
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.comparison-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.comparison-table tr:last-child td {
+  border-bottom: none;
+}
+
+.comparison-table tr:hover td {
+  background-color: rgba(245, 247, 250, 0.7);
+}
+
+.metric-name {
+  font-weight: 600;
+}
+
+.metric-baseline {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.metric-projected {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.delta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-badge);
+}
+
+.delta-badge.positive {
+  background-color: var(--status-positive-bg);
+  color: var(--status-positive);
+  border: 1px solid var(--status-positive-border);
+}
+
+.delta-badge.neutral {
+  background-color: var(--surface-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.delta-badge.negative {
+  background-color: var(--status-critical-bg);
+  color: var(--status-critical);
+  border: 1px solid var(--status-critical-border);
+}
+
+.delta-badge.warning {
+  background-color: var(--status-warning-bg);
+  color: var(--status-warning);
+  border: 1px solid var(--status-warning-border);
+}
+
+/* Bottlenecks Warning Drawer */
+.bottlenecks-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bottleneck-item {
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bottleneck-item.critical {
+  background-color: var(--status-critical-bg);
+  border-left: 3px solid var(--status-critical);
+  color: #7A140F;
+}
+
+.bottleneck-item.warning {
+  background-color: var(--status-warning-bg);
+  border-left: 3px solid var(--status-warning);
+  color: #6D3D00;
+}
+
+.bottleneck-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: var(--text-xs);
+}
+
+.bottleneck-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.bottleneck-action {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.no-bottlenecks-card {
+  padding: var(--space-3);
+  background-color: var(--status-positive-bg);
+  border: 1px solid var(--status-positive-border);
+  border-radius: var(--radius-control);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--status-positive);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+/* Error State */
+.simulation-error-banner {
+  background-color: var(--status-critical-bg);
+  border: 1px solid var(--status-critical-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  color: var(--status-critical);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.provenance-footer {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  padding: 0 var(--space-2);
+}

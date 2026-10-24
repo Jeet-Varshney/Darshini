@@ -34,6 +34,12 @@ class BoundingBox(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0, description="Model confidence score")
     class_id: int = Field(0, description="Detected class index (0 for person)")
     class_name: str = Field("person", description="Detected class label")
+    ground_contact_normalized: Optional[List[float]] = Field(
+        None,
+        description="Normalized ground contact coordinate [x_ground, y_ground] (bottom-center) for zone mapping",
+    )
+    is_stationary: Optional[bool] = Field(None, description="Whether subject is stationary across frames")
+    track_id: Optional[int] = Field(None, description="Temporal tracking ID across frames")
 
 
 class FrameDetection(BaseModel):
@@ -172,5 +178,111 @@ class LocationUpdateRequest(BaseModel):
     heading: Optional[float] = Field(None, description="Compass heading in degrees")
     speed: Optional[float] = Field(None, description="Ground speed in m/s")
     timestamp: Optional[str] = Field(None, description="Client ISO timestamp")
+
+
+# ============================================================================
+# Milestone 3: Digital Twin & NetworkX Simulation Schemas
+# ============================================================================
+
+class SimulationRunRequest(BaseModel):
+    scenario_name: Optional[str] = Field("What-If Crowd Simulation", description="Scenario identifier title")
+    duration_minutes: int = Field(60, ge=10, le=360, description="Scenario time horizon in minutes")
+    inflow_multiplier: float = Field(1.0, ge=0.1, le=5.0, description="Crowd influx multiplier (1.0 = baseline, 2.0 = 2x surge)")
+    crowd_multiplier: Optional[float] = Field(None, ge=0.1, le=5.0, description="Alias for inflow_multiplier")
+    gate_overrides: Optional[dict[str, str]] = Field(default_factory=dict, description="Gate state overrides (OPEN, RESTRICTED, CLOSED)")
+    gate_b_override: Optional[str] = Field(None, description="Direct shortcut for gate B access state")
+    road_closures: Optional[list[str]] = Field(default_factory=list, description="IDs of blocked or closed corridors")
+    closed_road_ids: Optional[list[str]] = Field(default_factory=list, description="Alias for road_closures")
+    traffic_diversion_pct: float = Field(0.0, ge=0.0, le=100.0, description="Percentage flow diverted to perimeter bypass")
+    shuttle_dispatch_multiplier: float = Field(1.0, ge=0.5, le=3.0, description="Transit/shuttle dispatch frequency multiplier")
+
+
+class ProjectedEdgeLoad(BaseModel):
+    edge_id: str
+    name: str
+    source_node: str
+    target_node: str
+    corridor_type: str
+    length_meters: float
+    capacity_limit_pph: int
+    base_flow_pph: int
+    simulated_flow_pph: int
+    utilization_pct: float
+    saturation_status: str  # NORMAL, WARNING, CRITICAL
+    breach_predicted: bool
+    delay_factor: float
+    is_blocked: bool
+    svg_coords: list[int]
+
+
+class NetworkNodeStatus(BaseModel):
+    node_id: str
+    name: str
+    node_type: str
+    coordinates: list[float]
+    svg_pos: list[int]
+    inflow_pph: int
+    outflow_pph: int
+    capacity_pax: int
+    accumulation_risk: str  # LOW, MODERATE, HIGH
+
+
+class BaselineComparison(BaseModel):
+    network_flow_status: str  # OPTIMAL, ELEVATED, CRITICAL_SATURATION, IMPROVED
+    summary: str
+    baseline_inflow_rate_pph: int
+    projected_inflow_rate_pph: int
+    baseline_avg_utilization_pct: float
+    projected_avg_utilization_pct: float
+    utilization_delta_pct: float
+    baseline_critical_bottlenecks: int
+    projected_critical_bottlenecks: int
+    bottlenecks_delta: int
+    estimated_clearance_minutes_baseline: float
+    estimated_clearance_minutes_projected: float
+    clearance_time_delta_mins: float
+    peak_density_p_sqm_baseline: float
+    peak_density_p_sqm_projected: float
+    peak_density_delta_p_sqm: float
+
+
+class SimulationRunResponse(BaseModel):
+    scenario_id: str
+    scenario_name: str
+    generated_at: str
+    execution_time_ms: float
+    status: str
+    inflow_multiplier: float
+    duration_minutes: int
+    baseline_comparison: BaselineComparison
+    projected_edge_loads: list[ProjectedEdgeLoad]
+    network_nodes: list[NetworkNodeStatus]
+    warnings: list[str]
+    data_provenance: dict[str, str]
+
+
+class DetectionHistoryRecord(BaseModel):
+    id: int = Field(..., description="Unique record identifier in SQLite storage")
+    timestamp: str = Field(..., description="UTC ISO 8601 timestamp of detection inference")
+    camera_id: str = Field(..., description="Source camera or client identifier")
+    camera_name: str = Field(..., description="Human-readable camera name")
+    zone_id: Optional[str] = Field(None, description="Assigned venue zone ID")
+    zone_name: Optional[str] = Field(None, description="Assigned venue zone friendly name")
+    person_count: int = Field(..., ge=0, description="Instantaneous person count from genuine model inference")
+    stationary_count: Optional[int] = Field(None, ge=0, description="Count of stationary persons tracked in frame")
+    moving_count: Optional[int] = Field(None, ge=0, description="Count of moving persons tracked in frame")
+    avg_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Average confidence of genuine detections (null if 0 persons)")
+    inference_duration_ms: Optional[float] = Field(None, ge=0.0, description="Model inference latency in milliseconds")
+    data_source: str = Field("LIVE_CAMERA_INFERENCE", description="Data provenance label")
+
+
+class DetectionHistoryResponse(BaseModel):
+    total: int = Field(..., ge=0, description="Total matching detection records returned")
+    limit: int = Field(..., ge=1, description="Applied query limit")
+    records: List[DetectionHistoryRecord] = Field(default_factory=list, description="Chronological list of sampled detection records")
+    camera_id: Optional[str] = Field(None, description="Filtered camera/source identifier")
+    zone_id: Optional[str] = Field(None, description="Filtered zone identifier")
+    timestamp: str = Field(..., description="Query response ISO 8601 UTC timestamp")
+
 
 

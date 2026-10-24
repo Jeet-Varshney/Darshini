@@ -3,7 +3,8 @@ export type SectionId =
   | 'camera-detection'
   | 'scenario-lab'
   | 'emergency-routing'
-  | 'incidents-reports';
+  | 'incidents-reports'
+  | 'events-management';
 
 export interface NavItem {
   id: SectionId;

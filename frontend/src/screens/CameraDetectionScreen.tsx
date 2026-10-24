@@ -5,6 +5,8 @@ import type {
   FrameDetection,
   CameraDevice,
   LiveStreamPacket,
+  BoundingBox,
+  DetectionHistoryRecord,
 } from '../types/detection';
 import {
   checkBackendHealth,
@@ -16,6 +18,7 @@ import {
   stopLiveCamera,
   createCameraWebSocket,
   assignCameraZone,
+  fetchDetectionHistory,
 } from '../services/detectionApi';
 import { FICTIONAL_VENUE } from '../data/fictionalVenue';
 
@@ -47,14 +50,24 @@ const SAMPLE_OPTIONS: SampleOption[] = [
 type OperationMode = 'live-camera' | 'sample-file';
 type CameraSourceMode = 'browser' | 'server';
 
+export interface EscalationContext {
+  zone_id?: string;
+  zone_name?: string;
+  camera_id?: string;
+  person_count?: number;
+  timestamp?: string;
+}
+
 interface CameraDetectionScreenProps {
   initialZoneId?: string | null;
   onNavigateToZone?: (zoneId: string) => void;
+  onEscalateToIncident?: (ctx: EscalationContext) => void;
 }
 
 export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
   initialZoneId,
   onNavigateToZone,
+  onEscalateToIncident,
 }) => {
   // Mode selection: Live Camera vs Uploaded Sample Video
   const [activeMode, setActiveMode] = useState<OperationMode>('live-camera');
@@ -97,6 +110,26 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
   const [liveFramePacket, setLiveFramePacket] = useState<LiveStreamPacket | null>(null);
   const [clientCaptureFps, setClientCaptureFps] = useState<number>(0.0);
   const [confThreshold, setConfThreshold] = useState<number>(0.25);
+  const [lastPacketTime, setLastPacketTime] = useState<number>(0);
+  const [isStale, setIsStale] = useState<boolean>(false);
+  const [staleElapsedSec, setStaleElapsedSec] = useState<number>(0);
+
+  // Periodic watchdog timer to identify stale feeds (> 3.0 seconds without frames)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (isCameraActive && lastPacketTime > 0) {
+        const elapsed = (Date.now() - lastPacketTime) / 1000;
+        const rounded = Math.max(0, Math.round(elapsed));
+        setStaleElapsedSec(rounded);
+        setIsStale(elapsed > 3.0);
+      } else {
+        setIsStale(false);
+        setStaleElapsedSec(0);
+      }
+    }, 500);
+
+    return () => clearInterval(timer);
+  }, [isCameraActive, lastPacketTime]);
 
   // Refs for client frame capture loop
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -119,6 +152,60 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
   const [detectionResult, setDetectionResult] = useState<DetectionResponse | null>(null);
   const [selectedFrame, setSelectedFrame] = useState<FrameDetection | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Phase 2: Persistent Detection History State
+  const [historyRecords, setHistoryRecords] = useState<DetectionHistoryRecord[]>([]);
+  const [historyTotal, setHistoryTotal] = useState<number>(0);
+  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyZoneFilter, setHistoryZoneFilter] = useState<string>('');
+  const [historySourceFilter, setHistorySourceFilter] = useState<string>('');
+  const [historyLimit, setHistoryLimit] = useState<number>(25);
+  const [historyLastRefreshed, setHistoryLastRefreshed] = useState<string>('');
+
+  const loadHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const res = await fetchDetectionHistory({
+        zone_id: historyZoneFilter || undefined,
+        camera_id: historySourceFilter.trim() || undefined,
+        limit: historyLimit,
+      });
+      setHistoryRecords(res.records || []);
+      setHistoryTotal(res.total || 0);
+      setHistoryLastRefreshed(new Date().toLocaleTimeString());
+    } catch (err: any) {
+      setHistoryError(err.message || 'Failed to query persistent detection history.');
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }, [historyZoneFilter, historySourceFilter, historyLimit]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  // When camera stream is active, refresh history every 10 seconds to show newly persisted samples
+  useEffect(() => {
+    if (!isCameraActive) return;
+    const interval = setInterval(() => {
+      loadHistory();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [isCameraActive, loadHistory]);
+
+  const formatTimeAgo = (isoString: string): string => {
+    try {
+      const dt = new Date(isoString).getTime();
+      const sec = Math.max(0, Math.round((Date.now() - dt) / 1000));
+      if (sec < 60) return `${sec}s ago`;
+      if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+      return `${Math.floor(sec / 3600)}h ago`;
+    } catch {
+      return '';
+    }
+  };
 
   // 1. Fetch backend health
   const refreshHealth = useCallback(async () => {
@@ -191,6 +278,9 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
         if (packet.type === 'frame') {
           isInferringRef.current = false;
           setLiveFramePacket(packet);
+          setLastPacketTime(Date.now());
+          setIsStale(false);
+          setStaleElapsedSec(0);
           setCameraStreamError(null);
         } else if (packet.type === 'error') {
           isInferringRef.current = false;
@@ -198,6 +288,10 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
         } else if (packet.type === 'status' && packet.status === 'stopped') {
           isInferringRef.current = false;
           setIsCameraActive(false);
+          setLiveFramePacket(null);
+          setLastPacketTime(0);
+          setIsStale(false);
+          setStaleElapsedSec(0);
         }
       },
       () => {
@@ -463,6 +557,9 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
     isInferringRef.current = false;
     setIsCameraActive(false);
     setLiveFramePacket(null);
+    setLastPacketTime(0);
+    setIsStale(false);
+    setStaleElapsedSec(0);
     setClientCaptureFps(0);
   };
 
@@ -498,6 +595,9 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
     } finally {
       setIsCameraActive(false);
       setLiveFramePacket(null);
+      setLastPacketTime(0);
+      setIsStale(false);
+      setStaleElapsedSec(0);
     }
   };
 
@@ -516,6 +616,23 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
     } else {
       handleStopServerCamera();
     }
+  };
+
+  // Safe mode switching with clean hardware teardown
+  const handleSwitchMode = (mode: OperationMode) => {
+    if (activeMode === mode) return;
+    if (isCameraActive) {
+      handleStopCamera();
+    }
+    setActiveMode(mode);
+  };
+
+  const handleSwitchCameraEngine = (engine: CameraSourceMode) => {
+    if (cameraSourceMode === engine) return;
+    if (isCameraActive) {
+      handleStopCamera();
+    }
+    setCameraSourceMode(engine);
   };
 
   // =========================================================================
@@ -605,14 +722,20 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
   let streamStatusText = 'STREAM STANDBY';
   let streamStatusClass = 'badge-status-other';
 
-  if (!health?.model_ready) {
+  if (healthLoading) {
+    streamStatusText = 'CHECKING MODEL...';
+    streamStatusClass = 'badge-status-starting';
+  } else if (!health?.model_ready) {
     streamStatusText = 'MODEL UNAVAILABLE';
     streamStatusClass = 'badge-status-error';
   } else if (isCameraStarting) {
     streamStatusText = 'CONNECTING...';
     streamStatusClass = 'badge-status-starting';
+  } else if (isCameraActive && isStale) {
+    streamStatusText = `STALE FEED (${staleElapsedSec}s DELAY)`;
+    streamStatusClass = 'badge-status-stale';
   } else if (isCameraActive && liveFramePacket) {
-    streamStatusText = 'INFERENCE RUNNING';
+    streamStatusText = 'INFERENCE STREAMING';
     streamStatusClass = 'badge-status-completed';
   } else if (isCameraActive && !liveFramePacket) {
     streamStatusText = 'AWAITING FRAMES...';
@@ -643,7 +766,7 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
       <div className="detection-header-card">
         <div className="detection-header-left">
           <div className="detection-title-group">
-            <h2 className="detection-screen-title">Universal Live Camera & Person Detection Pipeline</h2>
+            <h2 className="detection-screen-title">Universal Live Camera &amp; Person Detection Pipeline</h2>
             <span className="detection-tag">GENUINE CV INFERENCE</span>
             <span className="detection-version-tag">YOLOv8n CPU</span>
           </div>
@@ -686,14 +809,14 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
           role="tab"
           aria-selected={activeMode === 'live-camera'}
           className={`mode-tab-btn ${activeMode === 'live-camera' ? 'mode-tab-btn-active' : ''}`}
-          onClick={() => setActiveMode('live-camera')}
+          onClick={() => handleSwitchMode('live-camera')}
         >
           <svg className="mode-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
             <circle cx="12" cy="13" r="4" />
           </svg>
           <span>Universal Live Camera Feed</span>
-          {isCameraActive && <span className="tab-live-pulse">LIVE</span>}
+          {isCameraActive && <span className="tab-live-pulse">{isStale ? 'STALE' : 'LIVE'}</span>}
         </button>
 
         <button
@@ -701,7 +824,7 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
           role="tab"
           aria-selected={activeMode === 'sample-file'}
           className={`mode-tab-btn ${activeMode === 'sample-file' ? 'mode-tab-btn-active' : ''}`}
-          onClick={() => setActiveMode('sample-file')}
+          onClick={() => handleSwitchMode('sample-file')}
         >
           <svg className="mode-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
@@ -731,17 +854,18 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
       {/* MODE 1: Universal Live Camera Feed                                    */}
       {/* ==================================================================== */}
       {activeMode === 'live-camera' && (
-        <div className="detection-workspace-grid">
+        <>
+          <div className="detection-workspace-grid">
           {/* LEFT: Live Camera Selector & Controls */}
           <section className="detection-panel-card" aria-label="Camera Hardware Controls">
             <div className="panel-card-header">
               <h3 className="panel-card-title">1. Camera Source & Controls</h3>
-              <span className={`panel-card-badge ${isCameraActive ? 'badge-status-completed' : ''}`}>
-                {isCameraActive ? 'LIVE ACTIVE' : 'STANDBY'}
+              <span className={`panel-card-badge ${isCameraActive ? (isStale ? 'badge-status-stale' : 'badge-status-completed') : ''}`}>
+                {isCameraActive ? (isStale ? 'FEED STALE' : 'LIVE ACTIVE') : 'STANDBY'}
               </span>
             </div>
 
-            {/* Milestone 4: Camera Engine Architecture Switcher */}
+            {/* Camera Engine Architecture Switcher */}
             <div style={{ marginBottom: 'var(--space-3)' }}>
               <label className="control-section-label">Camera Capture Engine:</label>
               <div
@@ -765,11 +889,10 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
                     fontWeight: cameraSourceMode === 'browser' ? 700 : 500,
                     backgroundColor: cameraSourceMode === 'browser' ? 'var(--accent-primary)' : 'transparent',
                     color: cameraSourceMode === 'browser' ? '#FFFFFF' : 'var(--text-secondary)',
-                    cursor: isCameraActive ? 'not-allowed' : 'pointer',
+                    cursor: 'pointer',
                     transition: 'all 0.15s ease',
                   }}
-                  onClick={() => !isCameraActive && setCameraSourceMode('browser')}
-                  disabled={isCameraActive}
+                  onClick={() => handleSwitchCameraEngine('browser')}
                   title="Capture webcam directly from your browser (MacBook, USB, mobile, or virtual camera)"
                 >
                   🌐 Browser Camera (Client)
@@ -785,11 +908,10 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
                     fontWeight: cameraSourceMode === 'server' ? 700 : 500,
                     backgroundColor: cameraSourceMode === 'server' ? 'var(--accent-primary)' : 'transparent',
                     color: cameraSourceMode === 'server' ? '#FFFFFF' : 'var(--text-secondary)',
-                    cursor: isCameraActive ? 'not-allowed' : 'pointer',
+                    cursor: 'pointer',
                     transition: 'all 0.15s ease',
                   }}
-                  onClick={() => !isCameraActive && setCameraSourceMode('server')}
-                  disabled={isCameraActive}
+                  onClick={() => handleSwitchCameraEngine('server')}
                   title="Capture from video device on the backend host system (/dev/video*)"
                 >
                   🖥️ Server Hardware (V4L2)
@@ -1100,10 +1222,30 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
             <div className="metrics-summary-row" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
               <div className="metric-box">
                 <span className="metric-box-label">CURRENT PERSON COUNT</span>
-                <span className={`metric-box-val ${liveFramePacket && (liveFramePacket.person_count || 0) > 0 ? 'metric-val-highlight' : 'metric-val-zero'}`}>
+                <span
+                  className={`metric-box-val ${
+                    !isCameraActive || !liveFramePacket
+                      ? 'metric-val-zero'
+                      : isStale
+                      ? 'metric-val-stale'
+                      : (liveFramePacket.person_count || 0) > 0
+                      ? 'metric-val-highlight'
+                      : 'metric-val-zero'
+                  }`}
+                >
                   {isCameraActive && liveFramePacket ? liveFramePacket.person_count ?? 0 : '—'}
                 </span>
-                <span className="metric-box-sub">instantaneous FOV</span>
+                <span className="metric-box-sub">
+                  {isCameraActive && isStale ? (
+                    <span style={{ color: 'var(--status-caution)', fontWeight: 600 }}>
+                      STALE ({staleElapsedSec.toFixed(0)}s delay)
+                    </span>
+                  ) : isCameraActive ? (
+                    'instantaneous FOV'
+                  ) : (
+                    'hardware offline'
+                  )}
+                </span>
               </div>
 
               <div className="metric-box">
@@ -1115,8 +1257,12 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
                 </span>
                 <span className="metric-box-sub">
                   {isCameraActive && liveFramePacket
-                    ? `${liveFramePacket.stationary_count ?? 0} stationary`
-                    : 'stationary hysteresis'}
+                    ? `${liveFramePacket.stationary_count ?? 0} stationary • ${Math.max(
+                        0,
+                        (liveFramePacket.tracked_persons_count ?? liveFramePacket.person_count ?? 0) -
+                          (liveFramePacket.stationary_count ?? 0)
+                      )} moving`
+                    : 'hysteresis filter'}
                 </span>
               </div>
 
@@ -1133,13 +1279,31 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
               </div>
 
               <div className="metric-box">
-                <span className="metric-box-label">INFERENCE RATE</span>
+                <span className="metric-box-label">INFERENCE LATENCY</span>
                 <span className="metric-box-val font-mono">
-                  {isCameraActive && liveFramePacket && liveFramePacket.inference_fps !== undefined
-                    ? `${liveFramePacket.inference_fps.toFixed(1)} FPS`
+                  {isCameraActive && liveFramePacket && liveFramePacket.inference_duration_ms !== undefined
+                    ? `${liveFramePacket.inference_duration_ms.toFixed(0)} ms`
                     : '—'}
                 </span>
-                <span className="metric-box-sub">hosted YOLOv8</span>
+                <span className="metric-box-sub">
+                  {isCameraActive && isStale ? 'stream stalled' : 'hosted YOLOv8n'}
+                </span>
+              </div>
+
+              <div className="metric-box">
+                <span className="metric-box-label">LAST INFERENCE</span>
+                <span className="metric-box-val font-mono" style={{ fontSize: '13px' }}>
+                  {isCameraActive && liveFramePacket?.timestamp
+                    ? `${liveFramePacket.timestamp.substring(11, 19)} UTC`
+                    : '—'}
+                </span>
+                <span className="metric-box-sub">
+                  {isCameraActive && isStale
+                    ? `${staleElapsedSec.toFixed(0)}s ago (stale)`
+                    : isCameraActive
+                    ? 'latest model output'
+                    : 'awaiting feed'}
+                </span>
               </div>
 
               <div className="metric-box">
@@ -1159,20 +1323,37 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
             {/* Live Frame Viewport or Standby View */}
             {isCameraActive && liveFramePacket?.image ? (
               <div className="annotated-preview-card">
-                <div className="annotated-preview-header">
-                  <div>
-                    <span className="annotated-preview-title">Real-Time Annotated Camera Feed</span>
-                    <span className="annotated-preview-sub">
-                      {liveFramePacket.camera_name} • Stream Timestamp: {liveFramePacket.timestamp.substring(11, 19)} UTC
-                    </span>
+                {/* Staleness Banner if stream delayed */}
+                {isStale && (
+                  <div className="stale-warning-banner" role="alert">
+                    <div className="stale-icon-col">
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </svg>
+                    </div>
+                    <div className="stale-text-col">
+                      <strong>FEED STALENESS DETECTED:</strong> Last inference output was received {staleElapsedSec.toFixed(1)}s ago ({liveFramePacket.timestamp.substring(11, 19)} UTC). Displayed bounding boxes and counts are held from the last successful frame and are NOT currently live.
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                )}
+
+                {/* Status Strip & Provenance Badge */}
+                <div className="camera-status-strip">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span className="provenance-badge-live">LIVE CAMERA DATA • REAL-TIME CV</span>
+                    <span className={`panel-card-badge ${streamStatusClass}`}>{streamStatusText}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', flexWrap: 'wrap' }}>
+                    <span>Device: <strong>{liveFramePacket.camera_name || (cameraSourceMode === 'browser' ? 'Browser Client' : 'Server V4L2')}</strong></span>
+                    <span>•</span>
+                    <span>Inference Time: <strong>{liveFramePacket.timestamp.substring(11, 19)} UTC</strong></span>
                     {liveFramePacket.inference_duration_ms !== undefined && (
-                      <span className="provenance-chip" style={{ background: '#E6F4EA', color: '#137333', border: '1px solid #CEEAD6' }}>
-                        INFER: {liveFramePacket.inference_duration_ms.toFixed(0)}ms
-                      </span>
+                      <>
+                        <span>•</span>
+                        <span>Latency: <strong>{liveFramePacket.inference_duration_ms.toFixed(0)}ms</strong></span>
+                      </>
                     )}
-                    <span className="provenance-chip">LIVE INFERENCE OVERLAY</span>
                   </div>
                 </div>
 
@@ -1184,24 +1365,102 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
                   />
                 </div>
 
-                {/* Live Detected Bounding Box Inspector */}
-                {liveFramePacket.detections && liveFramePacket.detections.length > 0 && (
-                  <div className="live-boxes-list">
-                    <span className="live-boxes-title">
-                      Detected Persons ({liveFramePacket.detections.length}):
-                    </span>
-                    <div className="live-boxes-chips">
-                      {liveFramePacket.detections.map((d, idx) => (
-                        <span key={idx} className="live-box-pill">
-                          Person #{d.track_id || idx + 1}: {(d.confidence * 100).toFixed(0)}% conf
-                          {d.is_stationary ? ' [STATIONARY]' : ''} • Box: [{d.box_pixels.join(', ')}]
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Structured Live Detection Inspector Table */}
+                {(() => {
+                  const rawList = (liveFramePacket.detections && liveFramePacket.detections.length > 0)
+                    ? liveFramePacket.detections
+                    : (liveFramePacket.bounding_boxes || []);
+                  const detectionList = rawList as Array<
+                    BoundingBox & {
+                      track_id?: number | string;
+                      is_stationary?: boolean;
+                      assigned_zone_id?: string | null;
+                    }
+                  >;
 
-                {/* Milestone 4: Operational Guardrails Notice */}
+                  if (detectionList.length > 0) {
+                    return (
+                      <div className="live-detection-table-wrapper">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Verified Person Detections ({detectionList.length})
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            Instantaneous YOLOv8n Predictions • Person Class Only
+                          </span>
+                        </div>
+                        <table className="live-detection-table">
+                          <thead>
+                            <tr>
+                              <th>Track ID</th>
+                              <th>Class</th>
+                              <th>Confidence</th>
+                              <th>Motion State</th>
+                              <th>Assigned Zone</th>
+                              <th>Bounding Box [X1, Y1, X2, Y2]</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detectionList.map((d, idx) => {
+                              const trackId = d.track_id !== undefined && d.track_id !== null && d.track_id !== 0 ? d.track_id : (idx + 1);
+                              const isStat = Boolean(d.is_stationary);
+                              const confPct = Math.round(d.confidence * 100);
+                              const zoneDisplay = d.assigned_zone_id || assignedZoneObj?.code || 'Unassigned';
+                              return (
+                                <tr key={idx}>
+                                  <td>
+                                    <span className="track-id-badge">#{trackId}</span>
+                                  </td>
+                                  <td>
+                                    <span style={{ fontWeight: 600 }}>{d.class_name || 'person'}</span>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>(COCO 0)</span>
+                                  </td>
+                                  <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ fontFamily: 'var(--font-mono)', minWidth: '34px' }}>{confPct}%</span>
+                                      <div className="confidence-bar">
+                                        <div className="confidence-bar-fill" style={{ width: `${confPct}%` }} />
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <span className={isStat ? 'stationary-badge-active' : 'moving-badge'}>
+                                      {isStat ? 'STATIONARY' : 'MOVING'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>{zoneDisplay}</span>
+                                  </td>
+                                  <td>
+                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                                      [{d.box_pixels ? d.box_pixels.join(', ') : '—'}]
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  } else if (liveFramePacket.person_count === 0) {
+                    return (
+                      <div className="zero-detections-banner">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="16" x2="12.01" y2="16" />
+                          </svg>
+                          <span><strong>ZERO PERSONS DETECTED:</strong> No persons in camera FOV meet the confidence threshold &ge; {confThreshold}.</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Operational Guardrails Notice */}
                 <div
                   style={{
                     marginTop: 'var(--space-3)',
@@ -1211,23 +1470,23 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
                     padding: 'var(--space-3)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '4px',
+                    gap: '6px',
                     fontSize: '11px',
                     color: 'var(--text-secondary)',
-                    lineHeight: 1.4,
+                    lineHeight: 1.45,
                   }}
                 >
                   <div>
                     <strong style={{ color: 'var(--text-primary)' }}>1. Non-Accumulation Rule:</strong> Count reflects instantaneous persons in view ({liveFramePacket.person_count ?? 0} pax). Consecutive frames are never summed or accumulated across time.
                   </div>
                   <div>
-                    <strong style={{ color: 'var(--text-primary)' }}>2. Zone Isolation:</strong> This camera strictly updates {assignedZoneObj ? `${assignedZoneObj.name} (${assignedZoneObj.code})` : 'its local monitor'}. Unassigned zones preserve their baseline data.
+                    <strong style={{ color: 'var(--text-primary)' }}>2. Instantaneous Count vs. Crowd Density:</strong> Person count is an optical bounding box count within the camera field of view, not calibrated crowd density (people/m²).
                   </div>
                   <div>
-                    <strong style={{ color: 'var(--text-primary)' }}>3. Universal Compatibility:</strong> Supports built-in laptop webcams, external USB cameras, mobile/virtual webcams (Iriun, DroidCam, OBS).
+                    <strong style={{ color: 'var(--text-primary)' }}>3. Truthful Computer Vision Boundary:</strong> Model performs YOLOv8n object bounding box person localization and stationary dwell filtering. Panic, abnormal movement, or dangerous crowd sentiment are not modeled or claimed.
                   </div>
                   <div>
-                    <strong style={{ color: 'var(--text-primary)' }}>4. Central Cloud Inference:</strong> Camera access is handled safely in the user&apos;s browser while YOLOv8 execution is centralized on the backend.
+                    <strong style={{ color: 'var(--text-primary)' }}>4. Zone Isolation & Provenance:</strong> This camera strictly updates {assignedZoneObj ? `${assignedZoneObj.name} (${assignedZoneObj.code})` : 'its local monitor'}. Unassigned venue zones preserve their baseline [SIMULATED DEMO DATA].
                   </div>
                 </div>
               </div>
@@ -1267,6 +1526,277 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
             )}
           </section>
         </div>
+
+        {/* ================================================================= */}
+        {/* 3. Persistent Detection History Panel (SQLite Telemetry)          */}
+        {/* ================================================================= */}
+        <section className="detection-panel-card history-panel-card" aria-label="Persistent Detection History">
+          <div className="panel-card-header">
+            <div>
+              <h3 className="panel-card-title">3. Persistent Detection History</h3>
+              <span className="annotated-preview-sub" style={{ display: 'block', marginTop: '2px' }}>
+                Sampled telemetry records from genuine YOLOv8n inference • Persisted in SQLite (<code>darshini.db</code>)
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span className="provenance-chip-archive">HISTORICAL ARCHIVE • SQLITE</span>
+              <span className="panel-card-badge">{historyTotal} Samples Recorded</span>
+            </div>
+          </div>
+
+          {/* Filter Toolbar */}
+          <div className="history-toolbar">
+            <div className="history-filters-group">
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Filter by Zone:
+              </label>
+              <select
+                value={historyZoneFilter}
+                onChange={(e) => setHistoryZoneFilter(e.target.value)}
+                className="history-filter-select"
+              >
+                <option value="">All Venue Zones</option>
+                {FICTIONAL_VENUE.zones.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {z.code}: {z.name}
+                  </option>
+                ))}
+              </select>
+
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginLeft: '6px' }}>
+                Camera / Source:
+              </label>
+              <input
+                type="text"
+                placeholder="Filter by source ID/name..."
+                value={historySourceFilter}
+                onChange={(e) => setHistorySourceFilter(e.target.value)}
+                className="history-filter-input"
+                style={{ width: '180px' }}
+              />
+
+              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginLeft: '6px' }}>
+                Max Samples:
+              </label>
+              <select
+                value={historyLimit}
+                onChange={(e) => setHistoryLimit(Number(e.target.value))}
+                className="history-filter-select"
+              >
+                <option value={15}>15 samples</option>
+                <option value={25}>25 samples</option>
+                <option value={50}>50 samples</option>
+                <option value={100}>100 samples</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={loadHistory}
+              disabled={isHistoryLoading}
+              className="btn-refresh-history"
+              title="Query the SQLite database for recent detection records"
+            >
+              {isHistoryLoading ? (
+                <>
+                  <span className="spinner-dot" style={{ width: '12px', height: '12px', borderWidth: '1.5px' }} />
+                  <span>Loading...</span>
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="23 4 23 10 17 10" />
+                    <polyline points="1 20 1 14 7 14" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                  <span>Refresh History</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Error Notification */}
+          {historyError && (
+            <div className="processing-error-banner" role="alert">
+              <div className="error-icon-col">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+              </div>
+              <div className="error-text-col">
+                <strong>Database Notice:</strong> {historyError}
+              </div>
+              <button type="button" className="btn-retry-error" onClick={loadHistory}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Body: Loading / Empty / Populated Table */}
+          {isHistoryLoading && historyRecords.length === 0 ? (
+            <div style={{ padding: 'var(--space-4)', textAlign: 'center' }}>
+              <div className="spinner-dot" style={{ width: '20px', height: '20px', margin: '0 auto 8px' }} />
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Querying SQLite database for historical detection samples...
+              </span>
+            </div>
+          ) : historyRecords.length === 0 ? (
+            <div className="zero-detections-banner" style={{ marginTop: 0 }}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>
+                <strong>No Detection History Recorded:</strong> Start a live camera stream above to generate genuine detection telemetry. Observations are automatically sampled at &le;1 sample per 2.0s and stored persistently in <code>darshini.db</code>.
+              </span>
+            </div>
+          ) : (
+            <div className="history-table-wrapper">
+              <table className="history-detection-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp (UTC)</th>
+                    <th>Camera / Source</th>
+                    <th>Assigned Zone</th>
+                    <th>Person Count</th>
+                    <th>Tracking Breakdown</th>
+                    <th>Avg Confidence</th>
+                    <th>Inference Latency</th>
+                    <th>Data Provenance</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyRecords.map((rec) => {
+                    const timeStr = rec.timestamp.length >= 19 ? rec.timestamp.substring(11, 19) : rec.timestamp;
+                    const dateStr = rec.timestamp.length >= 10 ? rec.timestamp.substring(0, 10) : '';
+                    const confPct = rec.avg_confidence !== null && rec.avg_confidence !== undefined ? Math.round(rec.avg_confidence * 100) : null;
+                    return (
+                      <tr key={rec.id}>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{timeStr} UTC</span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              {dateStr} ({formatTimeAgo(rec.timestamp)})
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontWeight: 600 }}>{rec.camera_name || 'Camera'}</span>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>
+                              ({rec.camera_id.length > 14 ? `${rec.camera_id.substring(0, 12)}...` : rec.camera_id})
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          {rec.zone_id ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-primary)' }}>
+                                {rec.zone_name || rec.zone_id}
+                              </span>
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>Unassigned</span>
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            className={`metric-box-val ${rec.person_count > 0 ? 'metric-val-highlight' : 'metric-val-zero'}`}
+                            style={{ fontSize: '13px', display: 'inline-block', minWidth: '24px', textAlign: 'center' }}
+                          >
+                            {rec.person_count}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>pax</span>
+                        </td>
+                        <td>
+                          {rec.stationary_count !== null && rec.stationary_count !== undefined ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span className={rec.stationary_count > 0 ? 'stationary-badge-active' : ''} style={{ fontSize: '10px' }}>
+                                {rec.stationary_count} stat
+                              </span>
+                              <span>•</span>
+                              <span className={rec.moving_count && rec.moving_count > 0 ? 'moving-badge' : ''} style={{ fontSize: '10px' }}>
+                                {rec.moving_count ?? 0} mov
+                              </span>
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          {confPct !== null ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontFamily: 'var(--font-mono)', minWidth: '32px' }}>{confPct}%</span>
+                              <div className="confidence-bar">
+                                <div className="confidence-fill" style={{ width: `${confPct}%` }} />
+                              </div>
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>— (0 pax)</span>
+                          )}
+                        </td>
+                        <td>
+                          <span style={{ fontFamily: 'var(--font-mono)' }}>
+                            {rec.inference_duration_ms !== null && rec.inference_duration_ms !== undefined
+                              ? `${rec.inference_duration_ms.toFixed(0)} ms`
+                              : '—'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="provenance-chip-archive">SQLITE ARCHIVE</span>
+                        </td>
+                        <td>
+                          {onEscalateToIncident && (
+                            <button
+                              type="button"
+                              className="btn-retry-error"
+                              style={{
+                                fontSize: '11px',
+                                padding: '3px 8px',
+                                background: 'var(--surface-primary)',
+                                borderColor: 'var(--border-subtle)',
+                                color: 'var(--accent-primary)',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                              onClick={() =>
+                                onEscalateToIncident({
+                                  zone_id: rec.zone_id || undefined,
+                                  zone_name: rec.zone_name || undefined,
+                                  camera_id: rec.camera_id,
+                                  person_count: rec.person_count,
+                                  timestamp: rec.timestamp,
+                                })
+                              }
+                              title="Create operator incident report citing this detection sample"
+                            >
+                              ⚠️ Escalate
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Footer / Retention Guardrails */}
+          <div className="history-footer-bar">
+            <span>
+              <strong>Persistence Guardrails:</strong> Sampled &le; 1 per 2.0s per camera • Max 1,000 samples FIFO retention • No image or video stored in DB.
+            </span>
+            <span>
+              {historyLastRefreshed ? `Last refreshed: ${historyLastRefreshed}` : ''}
+            </span>
+          </div>
+        </section>
+        </>
       )}
 
       {/* ==================================================================== */}
@@ -1480,7 +2010,7 @@ export const CameraDetectionScreen: React.FC<CameraDetectionScreenProps> = ({
                           Frame #{selectedFrame?.frame_index ?? detectionResult.preview_frame_index ?? 0} • Timestamp: {(selectedFrame?.timestamp_sec ?? 0).toFixed(2)}s • Persons: {selectedFrame?.person_count ?? detectionResult.max_person_count}
                         </span>
                       </div>
-                      <span className="provenance-chip">GENUINE PREDICTION</span>
+                      <span className="provenance-badge-upload">UPLOADED VIDEO ANALYSIS • SAMPLE BENCHMARK</span>
                     </div>
 
                     <div className="preview-image-wrapper">
